@@ -1,5 +1,5 @@
 
-
+#define VK_NO_PROTOTYPES
 #include "../external/volk/volk.h"
 #include <stdbool.h> // for bool
 #include <stddef.h>  // for size_t

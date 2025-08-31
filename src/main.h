@@ -3,19 +3,30 @@
 
 #include "types.h"
 #include <GLFW/glfw3.h>
-#include <vulkan/vulkan.h>
+#include "../external/VulkanMemoryAllocator/include/vk_mem_alloc.h"
 
 // Structs
+
+typedef struct AllocatedImage
+{
+	VkImage image;
+	VkImageView imageView;
+	VmaAllocation allocation;
+	VkExtent3D imageExtent;
+	VkFormat imageFormat;
+} AllocatedImage;
+
 typedef struct Application // Moved to top
 {
 	VkInstance instance;
 	VkPhysicalDevice physicaldevice;
 	VkDebugUtilsMessengerEXT debugMessenger;
 	VkDevice device;
+	VmaAllocator allocator;
 	VkSurfaceKHR surface;
 	u32 width;
 	u32 height;
-	  u32              frameNumber;
+	u32 frameNumber;
 	VkFormat swapchainFormat;
 	VkColorSpaceKHR swapchainColorSpace;
 	VkImage* swapchainImages;
@@ -25,18 +36,19 @@ typedef struct Application // Moved to top
 	VkPipeline graphicsPipeline;
 	// Per-swapchain-image semaphore signaled on render complete and waited by present
 	VkSemaphore* presentSemaphores;
-}Application;
+	AllocatedImage drawImage; // High-precision offscreen render target
+	VkExtent3D drawExtent;    // Resolution of drawImage
+} Application;
+#define MAX_FRAMES_IN_FLIGHT 2
 
-#define  MAX_FRAMES_IN_FLIGHT  2
-
-
-typedef struct FrameData {
-      VkCommandPool commandPools[MAX_FRAMES_IN_FLIGHT];
-    VkCommandBuffer commandBuffers[MAX_FRAMES_IN_FLIGHT];
+typedef struct FrameData
+{
+	VkCommandPool commandPools[MAX_FRAMES_IN_FLIGHT];
+	VkCommandBuffer commandBuffers[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore swapchainSemaphore[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore renderSemaphore[MAX_FRAMES_IN_FLIGHT];
 	VkFence inFlightFences[MAX_FRAMES_IN_FLIGHT];
-}FrameData;
+} FrameData;
 
 // Function Declarations
 // from helpers.c

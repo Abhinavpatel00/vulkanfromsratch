@@ -1,5 +1,106 @@
 #include "main.h"
 #include <math.h>
+#include <vulkan/vulkan_core.h>
+
+void createDrawImage(Application* app, VmaAllocator allocator)
+{
+	VkExtent3D extent = {
+	    app->width,
+	    app->height,
+	    1};
+
+	app->drawImage.imageExtent = extent;
+	app->drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+
+	VkImageUsageFlags usage = 0;
+	usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+	usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+	VkImageCreateInfo imgInfo = {
+	    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+	    .imageType = VK_IMAGE_TYPE_2D,
+	    .format = app->drawImage.imageFormat,
+	    .extent = extent,
+	    .mipLevels = 1,
+	    .arrayLayers = 1,
+	    .samples = VK_SAMPLE_COUNT_1_BIT,
+	    .tiling = VK_IMAGE_TILING_OPTIMAL,
+	    .usage = usage,
+	};
+
+	VmaAllocationCreateInfo allocInfo = {
+	    .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+	    .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	};
+
+	vmaCreateImage(allocator, &imgInfo, &allocInfo,
+	    &app->drawImage.image,
+	    &app->drawImage.allocation,
+	    NULL);
+
+	app->drawImage.imageView = createImageView(app->device, app->drawImage.image, app->drawImage.imageFormat, VK_IMAGE_VIEW_TYPE_2D, 0, 1, 0, 1);
+	app->drawExtent.width = extent.width;
+	app->drawExtent.height = extent.height;
+}
+
+void CopyImagetoImage(
+    VkCommandBuffer cmd,
+    VkImage source,
+    VkImageLayout sourceLayout,
+    VkImage destination,
+    VkImageLayout destinationLayout,
+    VkExtent3D srcExtent,
+    VkExtent3D dstExtent,
+    VkImageAspectFlags aspectMask,
+    uint32_t srcMipLevel,
+    uint32_t dstMipLevel,
+    uint32_t srcBaseLayer,
+    uint32_t dstBaseLayer,
+    uint32_t layerCount,
+    VkFilter filter)
+{
+	VkImageBlit2 blitRegion = {
+	    .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
+	    .pNext = NULL,
+	    .srcSubresource = {
+	        .aspectMask = aspectMask,
+	        .mipLevel = srcMipLevel,
+	        .baseArrayLayer = srcBaseLayer,
+	        .layerCount = layerCount,
+	    },
+	    .dstSubresource = {
+	        .aspectMask = aspectMask,
+	        .mipLevel = dstMipLevel,
+	        .baseArrayLayer = dstBaseLayer,
+	        .layerCount = layerCount,
+	    },
+	};
+
+	// src offsets
+	blitRegion.srcOffsets[0] = (VkOffset3D){0, 0, 0};
+	blitRegion.srcOffsets[1] = (VkOffset3D){(int32_t)srcExtent.width, (int32_t)srcExtent.height, (int32_t)srcExtent.depth};
+
+	// dst offsets
+	blitRegion.dstOffsets[0] = (VkOffset3D){0, 0, 0};
+	blitRegion.dstOffsets[1] = (VkOffset3D){(int32_t)dstExtent.width, (int32_t)dstExtent.height, (int32_t)dstExtent.depth};
+
+	VkBlitImageInfo2 blitInfo = {
+	    .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
+	    .pNext = NULL,
+	    .srcImage = source,
+	    .srcImageLayout = sourceLayout,
+	    .dstImage = destination,
+	    .dstImageLayout = destinationLayout,
+	    .regionCount = 1,
+	    .pRegions = &blitRegion,
+	    .filter = filter,
+	};
+
+	vkCmdBlitImage2(cmd, &blitInfo);
+}
+
 void createSwapchainImageViews(Application* app, VkSwapchainKHR swapchain)
 {
 	vkGetSwapchainImagesKHR(app->device, swapchain, &app->swapchainImageCount, NULL);
@@ -70,6 +171,22 @@ int main(void)
 	VkSwapchainKHR swapchain = createSwapchain(&app);
 	createSwapchainImageViews(&app, swapchain);
 
+	// Create VMA allocator and the offscreen draw image
+	printf("[VMA] Creating allocator...\n");
+	VmaVulkanFunctions vmaFuncs = {0};
+	vmaFuncs.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+	vmaFuncs.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+	VmaAllocatorCreateInfo allocatorInfo = {0};
+	allocatorInfo.instance = app.instance;
+	allocatorInfo.physicalDevice = app.physicaldevice;
+	allocatorInfo.device = app.device;
+	allocatorInfo.pVulkanFunctions = &vmaFuncs;
+	allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+	VK_CHECK(vmaCreateAllocator(&allocatorInfo, &app.allocator));
+	printf("[VMA] Allocator created. Creating draw image...\n");
+	createDrawImage(&app, app.allocator);
+	printf("[VMA] Draw image created.\n");
+
 	FrameData frameData = {0};
 	initCommands(&frameData, &app);
 	createSyncObjects(&frameData, &app);
@@ -95,49 +212,79 @@ int main(void)
 		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 		    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 		vkBeginCommandBuffer(cmd, &cmdinfo);
-		// Transition: UNDEFINED -> TRANSFER_DST_OPTIMAL
-		VkImageMemoryBarrier2 toTransfer = imageBarrier(
-		    app.swapchainImages[swapchainImageIndex],
-		    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
-		    0,
-		    VK_IMAGE_LAYOUT_UNDEFINED,
-		    VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-		    VK_ACCESS_2_TRANSFER_WRITE_BIT,
-		    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		    VK_IMAGE_ASPECT_COLOR_BIT,
-		    0, 1);
-		pipelineBarrier(cmd, 0, 0, NULL, 1, &toTransfer);
-
+		// Clear into offscreen draw image
 		float flash = fabsf(sinf((float)app.frameNumber / 120.f));
 		VkClearColorValue clearValue = {.float32 = {0.0f, 0.0f, flash, 1.0f}};
-
-		// clear whole image
 		VkImageSubresourceRange clearRange = {
-		    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-		    .baseMipLevel = 0,
-		    .levelCount = 1,
-		    .baseArrayLayer = 0,
-		    .layerCount = 1};
-		vkCmdClearColorImage(
-		    cmd,
-		    app.swapchainImages[swapchainImageIndex],
-		    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		    &clearValue,
-		    1,
-		    &clearRange);
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 1};
+
+		// draw image: UNDEFINED -> GENERAL
+		VkImageMemoryBarrier2 drawToGeneral = imageBarrier(
+			app.drawImage.image,
+			VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+			0,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_PIPELINE_STAGE_2_CLEAR_BIT,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0, 1);
+		pipelineBarrier(cmd, 0, 0, NULL, 1, &drawToGeneral);
+
+		vkCmdClearColorImage(cmd, app.drawImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
 		app.frameNumber++;
 
-		// Transition: TRANSFER_DST_OPTIMAL -> PRESENT_SRC_KHR
+		// Prepare for copy: draw GENERAL -> TRANSFER_SRC, swap UNDEFINED -> TRANSFER_DST
+		VkImageMemoryBarrier2 drawToSrc = imageBarrier(
+			app.drawImage.image,
+			VK_PIPELINE_STAGE_2_CLEAR_BIT,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_IMAGE_LAYOUT_GENERAL,
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			VK_ACCESS_2_TRANSFER_READ_BIT,
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0, 1);
+
+		VkImageMemoryBarrier2 swapToDst = imageBarrier(
+			app.swapchainImages[swapchainImageIndex],
+			VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+			0,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0, 1);
+		VkImageMemoryBarrier2 barriersPrep[2] = {drawToSrc, swapToDst};
+		pipelineBarrier(cmd, 0, 0, NULL, 2, barriersPrep);
+
+		// execute copy (blit, allows different sizes)
+		VkExtent3D srcExtent = {app.drawExtent.width, app.drawExtent.height, 1};
+		VkExtent3D dstExtent = {app.width, app.height, 1};
+		CopyImagetoImage(cmd,
+			app.drawImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			app.swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			srcExtent, dstExtent,
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0, 0, 0, 0, 1,
+			VK_FILTER_LINEAR);
+
+		// Transition swapchain to PRESENT
 		VkImageMemoryBarrier2 toPresent = imageBarrier(
-		    app.swapchainImages[swapchainImageIndex],
-		    VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-		    VK_ACCESS_2_TRANSFER_WRITE_BIT,
-		    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		    VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
-		    0,
-		    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-		    VK_IMAGE_ASPECT_COLOR_BIT,
-		    0, 1);
+			app.swapchainImages[swapchainImageIndex],
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+			0,
+			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0, 1);
 		pipelineBarrier(cmd, 0, 0, NULL, 1, &toPresent);
 
 		// finalize the command buffer (we can no longer add commands, but it can now be executed)
@@ -146,33 +293,29 @@ int main(void)
 		// Submit and present
 		VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 		VkSemaphore signalForThisImage = app.presentSemaphores[swapchainImageIndex];
-		
+
 		VkSemaphoreSubmitInfo waitSemaphoreInfo = {
-			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-			.semaphore = frameData.swapchainSemaphore[frameIndex],
-			.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
-		};
-		
+		    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		    .semaphore = frameData.swapchainSemaphore[frameIndex],
+		    .stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT};
+
 		VkSemaphoreSubmitInfo signalSemaphoreInfo = {
-			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-			.semaphore = signalForThisImage,
-			.stageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
-		};
-		
+		    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		    .semaphore = signalForThisImage,
+		    .stageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT};
+
 		VkCommandBufferSubmitInfo cmdBufferInfo = {
-			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-			.commandBuffer = cmd
-		};
-		
+		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+		    .commandBuffer = cmd};
+
 		VkSubmitInfo2 submit = {
-			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-			.waitSemaphoreInfoCount = 1,
-			.pWaitSemaphoreInfos = &waitSemaphoreInfo,
-			.commandBufferInfoCount = 1,
-			.pCommandBufferInfos = &cmdBufferInfo,
-			.signalSemaphoreInfoCount = 1,
-			.pSignalSemaphoreInfos = &signalSemaphoreInfo
-		};
+		    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+		    .waitSemaphoreInfoCount = 1,
+		    .pWaitSemaphoreInfos = &waitSemaphoreInfo,
+		    .commandBufferInfoCount = 1,
+		    .pCommandBufferInfos = &cmdBufferInfo,
+		    .signalSemaphoreInfoCount = 1,
+		    .pSignalSemaphoreInfos = &signalSemaphoreInfo};
 		VK_CHECK(vkQueueSubmit2(graphicsQueue, 1, &submit, frameData.inFlightFences[frameIndex]));
 
 		VkPresentInfoKHR present = {
@@ -187,6 +330,10 @@ int main(void)
 
 	// Ensure GPU work is complete before destroying resources
 	vkDeviceWaitIdle(app.device);
+
+	// destroy draw image resources
+	if (app.drawImage.imageView) vkDestroyImageView(app.device, app.drawImage.imageView, NULL);
+	if (app.drawImage.image) vmaDestroyImage(app.allocator, app.drawImage.image, app.drawImage.allocation);
 
 	for (u32 i = 0; i < app.swapchainImageCount; ++i)
 	{
@@ -205,6 +352,7 @@ int main(void)
 		vkDestroyCommandPool(app.device, frameData.commandPools[i], NULL);
 	}
 	vkDestroySwapchainKHR(app.device, swapchain, NULL);
+	if (app.allocator) vmaDestroyAllocator(app.allocator);
 	vkDestroyDevice(app.device, NULL);
 	vkDestroySurfaceKHR(app.instance, app.surface, NULL);
 	cleanupDebugMessenger(&app);
