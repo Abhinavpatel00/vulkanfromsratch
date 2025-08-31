@@ -146,16 +146,34 @@ int main(void)
 		// Submit and present
 		VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 		VkSemaphore signalForThisImage = app.presentSemaphores[swapchainImageIndex];
-		VkSubmitInfo submit = {
-		    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		    .waitSemaphoreCount = 1,
-		    .pWaitSemaphores = &frameData.swapchainSemaphore[frameIndex],
-		    .pWaitDstStageMask = &waitStage,
-		    .commandBufferCount = 1,
-		    .pCommandBuffers = &cmd,
-		    .signalSemaphoreCount = 1,
-		    .pSignalSemaphores = &signalForThisImage};
-		VK_CHECK(vkQueueSubmit(graphicsQueue, 1, &submit, frameData.inFlightFences[frameIndex]));
+		
+		VkSemaphoreSubmitInfo waitSemaphoreInfo = {
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+			.semaphore = frameData.swapchainSemaphore[frameIndex],
+			.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
+		};
+		
+		VkSemaphoreSubmitInfo signalSemaphoreInfo = {
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+			.semaphore = signalForThisImage,
+			.stageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
+		};
+		
+		VkCommandBufferSubmitInfo cmdBufferInfo = {
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+			.commandBuffer = cmd
+		};
+		
+		VkSubmitInfo2 submit = {
+			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+			.waitSemaphoreInfoCount = 1,
+			.pWaitSemaphoreInfos = &waitSemaphoreInfo,
+			.commandBufferInfoCount = 1,
+			.pCommandBufferInfos = &cmdBufferInfo,
+			.signalSemaphoreInfoCount = 1,
+			.pSignalSemaphoreInfos = &signalSemaphoreInfo
+		};
+		VK_CHECK(vkQueueSubmit2(graphicsQueue, 1, &submit, frameData.inFlightFences[frameIndex]));
 
 		VkPresentInfoKHR present = {
 		    .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
