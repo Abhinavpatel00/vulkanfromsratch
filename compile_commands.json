@@ -1,0 +1,34 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-c",
+      "-Wall",
+      "-Wextra",
+      "-D_DEBUG",
+      "-DVK_USE_PLATFORM_WAYLAND_KHR",
+      "-o",
+      "build/tri",
+      "src/main.c"
+    ],
+    "directory": "/home/lka/myprojects/vulkanfromscratch",
+    "file": "/home/lka/myprojects/vulkanfromscratch/src/main.c",
+    "output": "/home/lka/myprojects/vulkanfromscratch/build/tri"
+  },
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-c",
+      "-Wall",
+      "-Wextra",
+      "-D_DEBUG",
+      "-DVK_USE_PLATFORM_WAYLAND_KHR",
+      "-o",
+      "build/tri",
+      "src/ext.c"
+    ],
+    "directory": "/home/lka/myprojects/vulkanfromscratch",
+    "file": "/home/lka/myprojects/vulkanfromscratch/src/ext.c",
+    "output": "/home/lka/myprojects/vulkanfromscratch/build/tri"
+  }
+]

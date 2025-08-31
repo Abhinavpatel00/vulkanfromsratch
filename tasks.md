@@ -1,0 +1,2 @@
+- explore memory allocation strategies mainly arena alllocator, linear allocator, we can see kohi , our machinery blog , ryan fluery post , how other open source game engine solve this problem etc 
+- The forge uses hash function to calculate add and subtract pipelines descriptor sets etc . 
