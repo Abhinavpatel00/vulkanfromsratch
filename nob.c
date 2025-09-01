@@ -6,6 +6,41 @@
 
 #define BUILD_FOLDER "build/"
 #define SRC_FOLDER "src/"
+#define SHADERS_DIR "shaders"
+#define SPV_DIR "compiledshaders"
+
+static bool has_shader_ext(const char *name) {
+	const char *dot = strrchr(name, '.');
+	if (!dot) return false;
+	return strcmp(dot, ".vert") == 0 || strcmp(dot, ".frag") == 0 || strcmp(dot, ".comp") == 0 ||
+		   strcmp(dot, ".geom") == 0 || strcmp(dot, ".tesc") == 0 || strcmp(dot, ".tese") == 0;
+}
+
+static bool compile_shaders_in_dir(const char *dir) {
+	Nob_File_Paths children = {0};
+	if (!nob_read_entire_dir(dir, &children)) return false;
+	bool ok = true;
+	for (size_t i = 0; i < children.count; ++i) {
+		const char *name = children.items[i];
+		if (!name || name[0] == '.') continue; // skip hidden and dot entries
+		size_t mark = nob_temp_save();
+		const char *path = nob_temp_sprintf("%s/%s", dir, name);
+		Nob_File_Type t = nob_get_file_type(path);
+		if (t == NOB_FILE_DIRECTORY) {
+			if (!compile_shaders_in_dir(path)) ok = false;
+		} else if (t == NOB_FILE_REGULAR && has_shader_ext(name)) {
+			const char *base = nob_path_name(path);
+			const char *out = nob_temp_sprintf(SPV_DIR "/%s.spv", base);
+			Cmd glslc = {0};
+			cmd_append(&glslc, "glslc", path, "-o", out);
+			nob_log(NOB_INFO, "glslc %s -> %s", path, out);
+			if (!cmd_run(&glslc)) { ok = false; }
+		}
+		nob_temp_rewind(mark);
+	}
+	nob_da_free(children);
+	return ok;
+}
 
 int main(int argc, char** argv)
 {
@@ -15,6 +50,18 @@ int main(int argc, char** argv)
 
 	if (!mkdir_if_not_exists(BUILD_FOLDER))
 		return 1;
+
+	// Cross-platform shader compilation using nob APIs
+	if (!mkdir_if_not_exists(SPV_DIR)) return 1;
+	{
+		Cmd probe = {0};
+		cmd_append(&probe, "glslc", "--version");
+		if (!cmd_run(&probe)) {
+			nob_log(NOB_WARNING, "glslc not found; skipping shader compilation");
+		} else {
+			if (!compile_shaders_in_dir(SHADERS_DIR)) return 1;
+		}
+	}
 
 	// Split C and C++ sources
 	const char* c_src_files[] = {

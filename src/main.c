@@ -1,7 +1,5 @@
 #include "main.h"
 #include <math.h>
-#include <vulkan/vulkan_core.h>
-
 void createDrawImage(Application* app, VmaAllocator allocator)
 {
 	VkExtent3D extent = {
@@ -176,12 +174,13 @@ int main(void)
 	VmaVulkanFunctions vmaFuncs = {0};
 	vmaFuncs.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 	vmaFuncs.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
-	VmaAllocatorCreateInfo allocatorInfo = {0};
-	allocatorInfo.instance = app.instance;
-	allocatorInfo.physicalDevice = app.physicaldevice;
-	allocatorInfo.device = app.device;
-	allocatorInfo.pVulkanFunctions = &vmaFuncs;
-	allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+	VmaAllocatorCreateInfo allocatorInfo = {
+	    .instance = app.instance,
+	    .physicalDevice = app.physicaldevice,
+	    .device = app.device,
+	    .pVulkanFunctions = &vmaFuncs,
+	    .vulkanApiVersion = VK_API_VERSION_1_3,
+	};
 	VK_CHECK(vmaCreateAllocator(&allocatorInfo, &app.allocator));
 	printf("[VMA] Allocator created. Creating draw image...\n");
 	createDrawImage(&app, app.allocator);
@@ -196,6 +195,84 @@ int main(void)
 	VkQueue graphicsQueue;
 	vkGetDeviceQueue(app.device, graphicsQueueFamilyIndex, 0, &graphicsQueue);
 
+	VkDescriptorPoolSize poolSize = {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 10};
+	VkDescriptorPoolCreateInfo poolInfo = {};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.maxSets = 10; // number of descriptor sets we can allocate
+	poolInfo.poolSizeCount = 1;
+	poolInfo.pPoolSizes = &poolSize;
+	VkDescriptorPool descriptorPool;
+	VK_CHECK(vkCreateDescriptorPool(app.device, &poolInfo, NULL, &descriptorPool));
+	// 2. Create descriptor set layout
+	VkDescriptorSetLayoutBinding binding = {};
+	binding.binding = 0;
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	binding.descriptorCount = 1; // one image at binding 0
+	binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	binding.pImmutableSamplers = NULL;
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = 1;
+	layoutInfo.pBindings = &binding;
+	VkDescriptorSetLayout drawImageDescriptorLayout;
+	VK_CHECK(vkCreateDescriptorSetLayout(app.device, &layoutInfo, NULL, &drawImageDescriptorLayout));
+
+	// 3. Allocate descriptor set(s)
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = descriptorPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = &drawImageDescriptorLayout;
+
+	VkDescriptorSet descriptorSet;
+	VK_CHECK(vkAllocateDescriptorSets(app.device, &allocInfo, &descriptorSet));
+
+	// 4. Update descriptor with draw image as storage image
+	VkDescriptorImageInfo storageInfo = {
+		.sampler = VK_NULL_HANDLE,
+		.imageView = app.drawImage.imageView,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+	};
+	VkWriteDescriptorSet write = {
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = descriptorSet,
+		.dstBinding = 0,
+		.dstArrayElement = 0,
+		.descriptorCount = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+		.pImageInfo = &storageInfo,
+	};
+	vkUpdateDescriptorSets(app.device, 1, &write, 0, NULL);
+
+	// 5. Create compute pipeline for compiledshaders/grad.comp.spv
+	VkPipelineLayout computePipelineLayout;
+	{
+		VkPipelineLayoutCreateInfo plInfo = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.setLayoutCount = 1,
+			.pSetLayouts = &drawImageDescriptorLayout,
+		};
+		VK_CHECK(vkCreatePipelineLayout(app.device, &plInfo, NULL, &computePipelineLayout));
+	}
+
+	VkPipeline computePipeline;
+	{
+		VkShaderModule compModule = LoadShaderModule("compiledshaders/grad.comp.spv", app.device);
+		VkPipelineShaderStageCreateInfo stage = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.stage = VK_SHADER_STAGE_COMPUTE_BIT,
+			.module = compModule,
+			.pName = "main",
+		};
+		VkComputePipelineCreateInfo cpInfo = {
+			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+			.stage = stage,
+			.layout = computePipelineLayout,
+		};
+		VK_CHECK(vkCreateComputePipelines(app.device, VK_NULL_HANDLE, 1, &cpInfo, NULL, &computePipeline));
+		vkDestroyShaderModule(app.device, compModule, NULL);
+	}
 	while (!glfwWindowShouldClose(window))
 	{
 
@@ -212,37 +289,31 @@ int main(void)
 		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 		    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 		vkBeginCommandBuffer(cmd, &cmdinfo);
-		// Clear into offscreen draw image
-		float flash = fabsf(sinf((float)app.frameNumber / 120.f));
-		VkClearColorValue clearValue = {.float32 = {0.0f, 0.0f, flash, 1.0f}};
-		VkImageSubresourceRange clearRange = {
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.baseMipLevel = 0,
-			.levelCount = 1,
-			.baseArrayLayer = 0,
-			.layerCount = 1};
-
-		// draw image: UNDEFINED -> GENERAL
+		// Prepare draw image for compute writes: UNDEFINED -> GENERAL
 		VkImageMemoryBarrier2 drawToGeneral = imageBarrier(
 			app.drawImage.image,
 			VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
 			0,
 			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_PIPELINE_STAGE_2_CLEAR_BIT,
-			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+			VK_ACCESS_2_SHADER_WRITE_BIT,
 			VK_IMAGE_LAYOUT_GENERAL,
 			VK_IMAGE_ASPECT_COLOR_BIT,
 			0, 1);
 		pipelineBarrier(cmd, 0, 0, NULL, 1, &drawToGeneral);
 
-		vkCmdClearColorImage(cmd, app.drawImage.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
-		app.frameNumber++;
+		// Dispatch grad.comp to fill the draw image
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 1, &descriptorSet, 0, NULL);
+		uint32_t gx = (app.drawExtent.width + 15u) / 16u;
+		uint32_t gy = (app.drawExtent.height + 15u) / 16u;
+		vkCmdDispatch(cmd, gx, gy, 1);
 
 		// Prepare for copy: draw GENERAL -> TRANSFER_SRC, swap UNDEFINED -> TRANSFER_DST
 		VkImageMemoryBarrier2 drawToSrc = imageBarrier(
 			app.drawImage.image,
-			VK_PIPELINE_STAGE_2_CLEAR_BIT,
-			VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+			VK_ACCESS_2_SHADER_WRITE_BIT,
 			VK_IMAGE_LAYOUT_GENERAL,
 			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
 			VK_ACCESS_2_TRANSFER_READ_BIT,
@@ -251,15 +322,15 @@ int main(void)
 			0, 1);
 
 		VkImageMemoryBarrier2 swapToDst = imageBarrier(
-			app.swapchainImages[swapchainImageIndex],
-			VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
-			0,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-			VK_ACCESS_2_TRANSFER_WRITE_BIT,
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			VK_IMAGE_ASPECT_COLOR_BIT,
-			0, 1);
+		    app.swapchainImages[swapchainImageIndex],
+		    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+		    0,
+		    VK_IMAGE_LAYOUT_UNDEFINED,
+		    VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		    VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		    VK_IMAGE_ASPECT_COLOR_BIT,
+		    0, 1);
 		VkImageMemoryBarrier2 barriersPrep[2] = {drawToSrc, swapToDst};
 		pipelineBarrier(cmd, 0, 0, NULL, 2, barriersPrep);
 
@@ -267,24 +338,24 @@ int main(void)
 		VkExtent3D srcExtent = {app.drawExtent.width, app.drawExtent.height, 1};
 		VkExtent3D dstExtent = {app.width, app.height, 1};
 		CopyImagetoImage(cmd,
-			app.drawImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			app.swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			srcExtent, dstExtent,
-			VK_IMAGE_ASPECT_COLOR_BIT,
-			0, 0, 0, 0, 1,
-			VK_FILTER_LINEAR);
+		    app.drawImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		    app.swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		    srcExtent, dstExtent,
+		    VK_IMAGE_ASPECT_COLOR_BIT,
+		    0, 0, 0, 0, 1,
+		    VK_FILTER_LINEAR);
 
 		// Transition swapchain to PRESENT
 		VkImageMemoryBarrier2 toPresent = imageBarrier(
-			app.swapchainImages[swapchainImageIndex],
-			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-			VK_ACCESS_2_TRANSFER_WRITE_BIT,
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
-			0,
-			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			VK_IMAGE_ASPECT_COLOR_BIT,
-			0, 1);
+		    app.swapchainImages[swapchainImageIndex],
+		    VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		    VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		    VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+		    0,
+		    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		    VK_IMAGE_ASPECT_COLOR_BIT,
+		    0, 1);
 		pipelineBarrier(cmd, 0, 0, NULL, 1, &toPresent);
 
 		// finalize the command buffer (we can no longer add commands, but it can now be executed)
@@ -326,14 +397,17 @@ int main(void)
 		    .pSwapchains = &swapchain,
 		    .pImageIndices = &swapchainImageIndex};
 		VK_CHECK(vkQueuePresentKHR(graphicsQueue, &present));
+		app.frameNumber++;
 	}
 
 	// Ensure GPU work is complete before destroying resources
 	vkDeviceWaitIdle(app.device);
 
 	// destroy draw image resources
-	if (app.drawImage.imageView) vkDestroyImageView(app.device, app.drawImage.imageView, NULL);
-	if (app.drawImage.image) vmaDestroyImage(app.allocator, app.drawImage.image, app.drawImage.allocation);
+	if (app.drawImage.imageView)
+		vkDestroyImageView(app.device, app.drawImage.imageView, NULL);
+	if (app.drawImage.image)
+		vmaDestroyImage(app.allocator, app.drawImage.image, app.drawImage.allocation);
 
 	for (u32 i = 0; i < app.swapchainImageCount; ++i)
 	{
@@ -352,7 +426,13 @@ int main(void)
 		vkDestroyCommandPool(app.device, frameData.commandPools[i], NULL);
 	}
 	vkDestroySwapchainKHR(app.device, swapchain, NULL);
-	if (app.allocator) vmaDestroyAllocator(app.allocator);
+	// Destroy compute/descriptor objects
+	vkDestroyPipeline(app.device, computePipeline, NULL);
+	vkDestroyPipelineLayout(app.device, computePipelineLayout, NULL);
+	vkDestroyDescriptorSetLayout(app.device, drawImageDescriptorLayout, NULL);
+	vkDestroyDescriptorPool(app.device, descriptorPool, NULL);
+	if (app.allocator)
+		vmaDestroyAllocator(app.allocator);
 	vkDestroyDevice(app.device, NULL);
 	vkDestroySurfaceKHR(app.instance, app.surface, NULL);
 	cleanupDebugMessenger(&app);

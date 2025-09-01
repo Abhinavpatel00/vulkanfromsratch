@@ -4,9 +4,28 @@ rm -f ./build/tri
 
 BUILD_FOLDER="build"
 SRC_FOLDER="src"
+SHADERS_DIR="shaders"
+SPV_DIR="compiledshaders"
 
 # Create build folder if it doesn't exist
 mkdir -p "$BUILD_FOLDER"
+mkdir -p "$SPV_DIR"
+
+# Compile shaders with glslc (if available)
+if command -v glslc >/dev/null 2>&1; then
+    echo "Compiling shaders → $SPV_DIR"
+    # Find common shader stages and compile them
+    while IFS= read -r -d '' src; do
+        base=$(basename "$src")
+        name="${base%.*}"
+        ext="${base##*.}"
+        out="$SPV_DIR/$name.$ext.spv"
+        echo "  glslc $src -> $out"
+        glslc "$src" -o "$out"
+    done < <(find "$SHADERS_DIR" -type f \( -name "*.vert" -o -name "*.frag" -o -name "*.comp" -o -name "*.geom" -o -name "*.tesc" -o -name "*.tese" \) -print0)
+else
+    echo "Warning: glslc not found. Skipping shader compilation. Install Vulkan SDK or glslc to enable."
+fi
 
 # List C and C++ source files separately
 c_src_files=(
@@ -14,6 +33,8 @@ c_src_files=(
     "$SRC_FOLDER/ext.c"
     "$SRC_FOLDER/initialise.c"
     "$SRC_FOLDER/helpers.c"
+    "$SRC_FOLDER/descriptor.c"
+
     "external/SPIRV-Reflect/spirv_reflect.c"
 )
 
