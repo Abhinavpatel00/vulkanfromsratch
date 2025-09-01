@@ -1,4 +1,5 @@
 #include "main.h"
+#include <GLFW/glfw3.h>
 #include <math.h>
 void createDrawImage(Application* app, VmaAllocator allocator)
 {
@@ -99,6 +100,25 @@ void CopyImagetoImage(
 	vkCmdBlitImage2(cmd, &blitInfo);
 }
 
+static void update_storage_image_descriptor(Application* app, VkDescriptorSet descriptorSet)
+{
+	VkDescriptorImageInfo storageInfo = {
+		.sampler = VK_NULL_HANDLE,
+		.imageView = app->drawImage.imageView,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+	};
+	VkWriteDescriptorSet write = {
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = descriptorSet,
+		.dstBinding = 0,
+		.dstArrayElement = 0,
+		.descriptorCount = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+		.pImageInfo = &storageInfo,
+	};
+	vkUpdateDescriptorSets(app->device, 1, &write, 0, NULL);
+}
+
 void createSwapchainImageViews(Application* app, VkSwapchainKHR swapchain)
 {
 	vkGetSwapchainImagesKHR(app->device, swapchain, &app->swapchainImageCount, NULL);
@@ -118,6 +138,77 @@ void createSwapchainImageViews(Application* app, VkSwapchainKHR swapchain)
 	}
 
 	printf("[Swapchain] ✅ Created %u image views!\n", app->swapchainImageCount);
+}
+
+void destroy_swapchain_resources(Application* app)
+{
+	// Destroy per-image resources
+	if (app->swapchainImageViews)
+	{
+		for (u32 i = 0; i < app->swapchainImageCount; ++i)
+		{
+			if (app->swapchainImageViews[i])
+				vkDestroyImageView(app->device, app->swapchainImageViews[i], NULL);
+			if (app->presentSemaphores && app->presentSemaphores[i])
+				vkDestroySemaphore(app->device, app->presentSemaphores[i], NULL);
+		}
+		free(app->swapchainImageViews);
+		app->swapchainImageViews = NULL;
+	}
+	if (app->swapchainImages)
+	{
+		free(app->swapchainImages);
+		app->swapchainImages = NULL;
+	}
+	if (app->presentSemaphores)
+	{
+		free(app->presentSemaphores);
+		app->presentSemaphores = NULL;
+	}
+	if (app->swapchain)
+	{
+		vkDestroySwapchainKHR(app->device, app->swapchain, NULL);
+		app->swapchain = VK_NULL_HANDLE;
+	}
+}
+
+void recreate_swapchain(Application* app)
+{
+	// Wait until non-zero framebuffer size (minimized windows report 0)
+	int width = 0, height = 0;
+	do {
+		glfwGetFramebufferSize(app->window, &width, &height);
+		glfwWaitEventsTimeout(0.01);
+	} while (width == 0 || height == 0);
+
+	vkDeviceWaitIdle(app->device);
+
+	// Destroy old swapchain-related resources
+	destroy_swapchain_resources(app);
+
+	// Update app dims
+	app->width = (u32)width;
+	app->height = (u32)height;
+
+	// Recreate swapchain and its image views
+	selectSwapchainFormat(app);
+	app->swapchain = createSwapchain(app);
+	createSwapchainImageViews(app, app->swapchain);
+
+	// Recreate draw image to match new size
+	if (app->drawImage.imageView)
+		vkDestroyImageView(app->device, app->drawImage.imageView, NULL);
+	if (app->drawImage.image)
+		vmaDestroyImage(app->allocator, app->drawImage.image, app->drawImage.allocation);
+	createDrawImage(app, app->allocator);
+}
+
+void glfw_framebuffer_resize_callback(GLFWwindow* window, int width, int height)
+{
+	(void)width; (void)height;
+	Application* app = (Application*)glfwGetWindowUserPointer(window);
+	if (app)
+		app->framebufferResized = true;
 }
 
 void initCommands(FrameData* frameData, Application* app)
@@ -148,6 +239,7 @@ int main(void)
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	GLFWwindow* window = glfwCreateWindow(800, 600, "Vulkan", NULL, NULL);
+	app.window = window;
 
 	volkInitialize();
 
@@ -166,8 +258,8 @@ int main(void)
 
 	selectSwapchainFormat(&app);
 
-	VkSwapchainKHR swapchain = createSwapchain(&app);
-	createSwapchainImageViews(&app, swapchain);
+	app.swapchain = createSwapchain(&app);
+	createSwapchainImageViews(&app, app.swapchain);
 
 	// Create VMA allocator and the offscreen draw image
 	printf("[VMA] Creating allocator...\n");
@@ -229,21 +321,7 @@ int main(void)
 	VK_CHECK(vkAllocateDescriptorSets(app.device, &allocInfo, &descriptorSet));
 
 	// 4. Update descriptor with draw image as storage image
-	VkDescriptorImageInfo storageInfo = {
-		.sampler = VK_NULL_HANDLE,
-		.imageView = app.drawImage.imageView,
-		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-	};
-	VkWriteDescriptorSet write = {
-		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		.dstSet = descriptorSet,
-		.dstBinding = 0,
-		.dstArrayElement = 0,
-		.descriptorCount = 1,
-		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-		.pImageInfo = &storageInfo,
-	};
-	vkUpdateDescriptorSets(app.device, 1, &write, 0, NULL);
+	update_storage_image_descriptor(&app, descriptorSet);
 
 	// 5. Create compute pipeline for compiledshaders/grad.comp.spv
 	VkPipelineLayout computePipelineLayout;
@@ -273,16 +351,41 @@ int main(void)
 		VK_CHECK(vkCreateComputePipelines(app.device, VK_NULL_HANDLE, 1, &cpInfo, NULL, &computePipeline));
 		vkDestroyShaderModule(app.device, compModule, NULL);
 	}
+	// Hook resize callback and user pointer
+	glfwSetWindowUserPointer(window, &app);
+	glfwSetFramebufferSizeCallback(window, glfw_framebuffer_resize_callback);
+
 	while (!glfwWindowShouldClose(window))
 	{
 
 		glfwPollEvents();
+		if (app.framebufferResized)
+		{
+			recreate_swapchain(&app);
+			update_storage_image_descriptor(&app, descriptorSet);
+			app.framebufferResized = false;
+		}
 		u32 frameIndex = app.frameNumber % MAX_FRAMES_IN_FLIGHT;
 		VK_CHECK(vkWaitForFences(app.device, 1, &frameData.inFlightFences[frameIndex], VK_TRUE, UINT64_MAX));
 		vkResetFences(app.device, 1, &frameData.inFlightFences[frameIndex]);
 
 		u32 swapchainImageIndex;
-		VK_CHECK(vkAcquireNextImageKHR(app.device, swapchain, UINT64_MAX, frameData.swapchainSemaphore[frameIndex], VK_NULL_HANDLE, &swapchainImageIndex));
+		VkResult acq = vkAcquireNextImageKHR(app.device, app.swapchain, UINT64_MAX, frameData.swapchainSemaphore[frameIndex], VK_NULL_HANDLE, &swapchainImageIndex);
+		if (acq == VK_ERROR_OUT_OF_DATE_KHR)
+		{
+			recreate_swapchain(&app);
+			update_storage_image_descriptor(&app, descriptorSet);
+			continue;
+		}
+		if (acq == VK_SUBOPTIMAL_KHR)
+		{
+			// Suboptimal is okay; proceed this frame and schedule a recreate
+			app.framebufferResized = true;
+		}
+		else
+		{
+			VK_CHECK(acq);
+		}
 		VkCommandBuffer cmd = frameData.commandBuffers[frameIndex];
 		VK_CHECK(vkResetCommandBuffer(cmd, 0));
 		VkCommandBufferBeginInfo cmdinfo = {
@@ -336,7 +439,7 @@ int main(void)
 
 		// execute copy (blit, allows different sizes)
 		VkExtent3D srcExtent = {app.drawExtent.width, app.drawExtent.height, 1};
-		VkExtent3D dstExtent = {app.width, app.height, 1};
+	VkExtent3D dstExtent = {app.width, app.height, 1};
 		CopyImagetoImage(cmd,
 		    app.drawImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		    app.swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -394,9 +497,18 @@ int main(void)
 		    .waitSemaphoreCount = 1,
 		    .pWaitSemaphores = &signalForThisImage,
 		    .swapchainCount = 1,
-		    .pSwapchains = &swapchain,
+			.pSwapchains = &app.swapchain,
 		    .pImageIndices = &swapchainImageIndex};
-		VK_CHECK(vkQueuePresentKHR(graphicsQueue, &present));
+		VkResult pres = vkQueuePresentKHR(graphicsQueue, &present);
+		if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR)
+		{
+			recreate_swapchain(&app);
+			update_storage_image_descriptor(&app, descriptorSet);
+		}
+		else
+		{
+			VK_CHECK(pres);
+		}
 		app.frameNumber++;
 	}
 
@@ -409,15 +521,7 @@ int main(void)
 	if (app.drawImage.image)
 		vmaDestroyImage(app.allocator, app.drawImage.image, app.drawImage.allocation);
 
-	for (u32 i = 0; i < app.swapchainImageCount; ++i)
-	{
-		vkDestroyImageView(app.device, app.swapchainImageViews[i], NULL);
-		vkDestroySemaphore(app.device, app.presentSemaphores[i], NULL);
-	}
-
-	free(app.swapchainImageViews);
-	free(app.swapchainImages);
-	free(app.presentSemaphores);
+	destroy_swapchain_resources(&app);
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		vkDestroySemaphore(app.device, frameData.swapchainSemaphore[i], NULL);
@@ -425,7 +529,7 @@ int main(void)
 		vkDestroyFence(app.device, frameData.inFlightFences[i], NULL);
 		vkDestroyCommandPool(app.device, frameData.commandPools[i], NULL);
 	}
-	vkDestroySwapchainKHR(app.device, swapchain, NULL);
+	// swapchain already destroyed by destroy_swapchain_resources
 	// Destroy compute/descriptor objects
 	vkDestroyPipeline(app.device, computePipeline, NULL);
 	vkDestroyPipelineLayout(app.device, computePipelineLayout, NULL);

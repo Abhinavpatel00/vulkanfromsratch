@@ -344,17 +344,38 @@ VkSwapchainKHR createSwapchain(Application* app)
 	    surfaceCapabilities.currentExtent.height,
 	    app->width, app->height);
 
+	// Decide extent: if surface dictates a fixed size, use that. Otherwise clamp our requested size.
+	VkExtent2D imageExtent;
+	if (surfaceCapabilities.currentExtent.width != UINT32_MAX)
+	{
+		imageExtent = surfaceCapabilities.currentExtent;
+		app->width = imageExtent.width;
+		app->height = imageExtent.height;
+	}
+	else
+	{
+		imageExtent.width = (app->width < surfaceCapabilities.minImageExtent.width) ? surfaceCapabilities.minImageExtent.width : app->width;
+		imageExtent.width = (imageExtent.width > surfaceCapabilities.maxImageExtent.width) ? surfaceCapabilities.maxImageExtent.width : imageExtent.width;
+		imageExtent.height = (app->height < surfaceCapabilities.minImageExtent.height) ? surfaceCapabilities.minImageExtent.height : app->height;
+		imageExtent.height = (imageExtent.height > surfaceCapabilities.maxImageExtent.height) ? surfaceCapabilities.maxImageExtent.height : imageExtent.height;
+	}
+
+	// Choose image count (aim for one more than minimum when possible)
+	uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
+	if (surfaceCapabilities.maxImageCount > 0 && imageCount > surfaceCapabilities.maxImageCount)
+		imageCount = surfaceCapabilities.maxImageCount;
+
 	VkSwapchainCreateInfoKHR swapchainInfo = {
 	    .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 	    .surface = app->surface,
-	    .minImageCount = surfaceCapabilities.minImageCount,
+	    .minImageCount = imageCount,
 	    .imageFormat = app->swapchainFormat,
 	    .imageColorSpace = app->swapchainColorSpace,
-	    .imageExtent = {.width = app->width, .height = app->height},
+	    .imageExtent = imageExtent,
 	    .imageArrayLayers = 1,
 	    .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 	    .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-	    .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+	    .preTransform = surfaceCapabilities.currentTransform,
 	    .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
 	    .presentMode = VK_PRESENT_MODE_MAILBOX_KHR,
 	    .clipped = VK_TRUE,

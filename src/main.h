@@ -24,14 +24,17 @@ typedef struct Application // Moved to top
 	VkDevice device;
 	VmaAllocator allocator;
 	VkSurfaceKHR surface;
+	GLFWwindow* window; // glfw window handle for callbacks/size
 	u32 width;
 	u32 height;
+	bool framebufferResized; // set by GLFW callback on resize
 	u32 frameNumber;
 	VkFormat swapchainFormat;
 	VkColorSpaceKHR swapchainColorSpace;
 	VkImage* swapchainImages;
 	VkImageView* swapchainImageViews;
 	u32 swapchainImageCount;
+	VkSwapchainKHR swapchain; // keep current swapchain handle
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 	// Per-swapchain-image semaphore signaled on render complete and waited by present
@@ -85,5 +88,10 @@ VkPipelineLayout createPipelineLayout(
 VkImageView createImageView(VkDevice device, VkImage image, VkFormat format, VkImageViewType viewType, u32 baseMipLevel, u32 levelCount, u32 baseArrayLayer, u32 layerCount);
 void createSwapchainImageViews(Application* app, VkSwapchainKHR swapchain);
 VkSemaphore CreateSemaphore(VkDevice device);
+
+// Resize / swapchain recreation
+void recreate_swapchain(Application* app);
+void destroy_swapchain_resources(Application* app);
+void glfw_framebuffer_resize_callback(GLFWwindow* window, int width, int height);
 
 #endif // MAIN_H
