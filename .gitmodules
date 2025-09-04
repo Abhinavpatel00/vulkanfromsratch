@@ -19,3 +19,22 @@
 [submodule "external/stb"]
 	path = external/stb
 	url = git@github.com:nothings/stb.git
+
+[submodule "external/zpl"]
+	path = external/zpl
+	url = https://github.com/zpl-c/zpl.git
+[submodule "external/librg"]
+	path = external/librg
+	url = https://github.com/zpl-c/librg
+[submodule "external/dds-ktx"]
+	path = external/dds-ktx
+	url = https://github.com/septag/dds-ktx.git
+[submodule "external/c89atomic"]
+	path = external/c89atomic
+	url = https://github.com/mackron/c89atomic.git
+[submodule "external/Remotery"]
+	path = external/Remotery
+	url = https://github.com/Celtoys/Remotery.git
+[submodule "external/tracy"]
+	path = external/tracy
+	url = https://github.com/wolfpld/tracy

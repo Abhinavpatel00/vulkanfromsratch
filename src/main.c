@@ -1,6 +1,14 @@
 #include "main.h"
 #include <GLFW/glfw3.h>
 #include <math.h>
+#include "../external/tracy/public/tracy/TracyC.h"
+
+
+
+
+
+
+
 void createDrawImage(Application* app, VmaAllocator allocator)
 {
 	VkExtent3D extent = {
@@ -44,12 +52,7 @@ void createDrawImage(Application* app, VmaAllocator allocator)
 	app->drawExtent.height = extent.height;
 }
 
-void CopyImagetoImage(
-    VkCommandBuffer cmd,
-    VkImage source,
-    VkImageLayout sourceLayout,
-    VkImage destination,
-    VkImageLayout destinationLayout,
+void CopyImagetoImage(VkCommandBuffer cmd, VkImage src, VkImageLayout srcLayout, VkImage dst, VkImageLayout dstLayout,
     VkExtent3D srcExtent,
     VkExtent3D dstExtent,
     VkImageAspectFlags aspectMask,
@@ -88,10 +91,10 @@ void CopyImagetoImage(
 	VkBlitImageInfo2 blitInfo = {
 	    .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
 	    .pNext = NULL,
-	    .srcImage = source,
-	    .srcImageLayout = sourceLayout,
-	    .dstImage = destination,
-	    .dstImageLayout = destinationLayout,
+	    .srcImage = src,
+	    .srcImageLayout = srcLayout,
+	    .dstImage = dst,
+	    .dstImageLayout = dstLayout,
 	    .regionCount = 1,
 	    .pRegions = &blitRegion,
 	    .filter = filter,
@@ -103,18 +106,18 @@ void CopyImagetoImage(
 static void update_storage_image_descriptor(Application* app, VkDescriptorSet descriptorSet)
 {
 	VkDescriptorImageInfo storageInfo = {
-		.sampler = VK_NULL_HANDLE,
-		.imageView = app->drawImage.imageView,
-		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+	    .sampler = VK_NULL_HANDLE,
+	    .imageView = app->drawImage.imageView,
+	    .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 	VkWriteDescriptorSet write = {
-		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		.dstSet = descriptorSet,
-		.dstBinding = 0,
-		.dstArrayElement = 0,
-		.descriptorCount = 1,
-		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-		.pImageInfo = &storageInfo,
+	    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+	    .dstSet = descriptorSet,
+	    .dstBinding = 0,
+	    .dstArrayElement = 0,
+	    .descriptorCount = 1,
+	    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	    .pImageInfo = &storageInfo,
 	};
 	vkUpdateDescriptorSets(app->device, 1, &write, 0, NULL);
 }
@@ -176,7 +179,8 @@ void recreate_swapchain(Application* app)
 {
 	// Wait until non-zero framebuffer size (minimized windows report 0)
 	int width = 0, height = 0;
-	do {
+	do
+	{
 		glfwGetFramebufferSize(app->window, &width, &height);
 		glfwWaitEventsTimeout(0.01);
 	} while (width == 0 || height == 0);
@@ -205,7 +209,8 @@ void recreate_swapchain(Application* app)
 
 void glfw_framebuffer_resize_callback(GLFWwindow* window, int width, int height)
 {
-	(void)width; (void)height;
+	(void)width;
+	(void)height;
 	Application* app = (Application*)glfwGetWindowUserPointer(window);
 	if (app)
 		app->framebufferResized = true;
@@ -327,9 +332,9 @@ int main(void)
 	VkPipelineLayout computePipelineLayout;
 	{
 		VkPipelineLayoutCreateInfo plInfo = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = 1,
-			.pSetLayouts = &drawImageDescriptorLayout,
+		    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		    .setLayoutCount = 1,
+		    .pSetLayouts = &drawImageDescriptorLayout,
 		};
 		VK_CHECK(vkCreatePipelineLayout(app.device, &plInfo, NULL, &computePipelineLayout));
 	}
@@ -338,15 +343,15 @@ int main(void)
 	{
 		VkShaderModule compModule = LoadShaderModule("compiledshaders/grad.comp.spv", app.device);
 		VkPipelineShaderStageCreateInfo stage = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			.stage = VK_SHADER_STAGE_COMPUTE_BIT,
-			.module = compModule,
-			.pName = "main",
+		    .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		    .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+		    .module = compModule,
+		    .pName = "main",
 		};
 		VkComputePipelineCreateInfo cpInfo = {
-			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-			.stage = stage,
-			.layout = computePipelineLayout,
+		    .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+		    .stage = stage,
+		    .layout = computePipelineLayout,
 		};
 		VK_CHECK(vkCreateComputePipelines(app.device, VK_NULL_HANDLE, 1, &cpInfo, NULL, &computePipeline));
 		vkDestroyShaderModule(app.device, compModule, NULL);
@@ -394,15 +399,15 @@ int main(void)
 		vkBeginCommandBuffer(cmd, &cmdinfo);
 		// Prepare draw image for compute writes: UNDEFINED -> GENERAL
 		VkImageMemoryBarrier2 drawToGeneral = imageBarrier(
-			app.drawImage.image,
-			VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
-			0,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-			VK_ACCESS_2_SHADER_WRITE_BIT,
-			VK_IMAGE_LAYOUT_GENERAL,
-			VK_IMAGE_ASPECT_COLOR_BIT,
-			0, 1);
+		    app.drawImage.image,
+		    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+		    0,
+		    VK_IMAGE_LAYOUT_UNDEFINED,
+		    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+		    VK_ACCESS_2_SHADER_WRITE_BIT,
+		    VK_IMAGE_LAYOUT_GENERAL,
+		    VK_IMAGE_ASPECT_COLOR_BIT,
+		    0, 1);
 		pipelineBarrier(cmd, 0, 0, NULL, 1, &drawToGeneral);
 
 		// Dispatch grad.comp to fill the draw image
@@ -414,15 +419,15 @@ int main(void)
 
 		// Prepare for copy: draw GENERAL -> TRANSFER_SRC, swap UNDEFINED -> TRANSFER_DST
 		VkImageMemoryBarrier2 drawToSrc = imageBarrier(
-			app.drawImage.image,
-			VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-			VK_ACCESS_2_SHADER_WRITE_BIT,
-			VK_IMAGE_LAYOUT_GENERAL,
-			VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-			VK_ACCESS_2_TRANSFER_READ_BIT,
-			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			VK_IMAGE_ASPECT_COLOR_BIT,
-			0, 1);
+		    app.drawImage.image,
+		    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+		    VK_ACCESS_2_SHADER_WRITE_BIT,
+		    VK_IMAGE_LAYOUT_GENERAL,
+		    VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		    VK_ACCESS_2_TRANSFER_READ_BIT,
+		    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		    VK_IMAGE_ASPECT_COLOR_BIT,
+		    0, 1);
 
 		VkImageMemoryBarrier2 swapToDst = imageBarrier(
 		    app.swapchainImages[swapchainImageIndex],
@@ -439,7 +444,7 @@ int main(void)
 
 		// execute copy (blit, allows different sizes)
 		VkExtent3D srcExtent = {app.drawExtent.width, app.drawExtent.height, 1};
-	VkExtent3D dstExtent = {app.width, app.height, 1};
+		VkExtent3D dstExtent = {app.width, app.height, 1};
 		CopyImagetoImage(cmd,
 		    app.drawImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		    app.swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -497,7 +502,7 @@ int main(void)
 		    .waitSemaphoreCount = 1,
 		    .pWaitSemaphores = &signalForThisImage,
 		    .swapchainCount = 1,
-			.pSwapchains = &app.swapchain,
+		    .pSwapchains = &app.swapchain,
 		    .pImageIndices = &swapchainImageIndex};
 		VkResult pres = vkQueuePresentKHR(graphicsQueue, &present);
 		if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR)
