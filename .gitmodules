@@ -32,9 +32,6 @@
 [submodule "external/c89atomic"]
 	path = external/c89atomic
 	url = https://github.com/mackron/c89atomic.git
-[submodule "external/Remotery"]
-	path = external/Remotery
-	url = https://github.com/Celtoys/Remotery.git
 [submodule "external/tracy"]
 	path = external/tracy
 	url = https://github.com/wolfpld/tracy
