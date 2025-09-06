@@ -40,11 +40,12 @@ c_src_files=(
 
 cpp_src_files=(
     "$SRC_FOLDER/vma.cpp"
+    "$SRC_FOLDER/tracy_vk_c.cpp"
 )
 
 # Flags
-CFLAGS="-D_DEBUG -DVK_USE_PLATFORM_WAYLAND_KHR -std=c99 -I VulkanMemoryAllocator/include"
-CXXFLAGS="-D_DEBUG -DVK_USE_PLATFORM_WAYLAND_KHR -std=c++17 -I VulkanMemoryAllocator/include"
+CFLAGS="-DTRACY_ENABLE -D_DEBUG -DVK_USE_PLATFORM_WAYLAND_KHR -std=c99 -I VulkanMemoryAllocator/include"
+CXXFLAGS="-DTRACY_ENABLE -D_DEBUG -DVK_USE_PLATFORM_WAYLAND_KHR -std=c++17 -I VulkanMemoryAllocator/include"
 LDFLAGS="-lvulkan -lm -lglfw -lpthread -ldl"
 
 # Output binary
