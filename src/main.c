@@ -2,15 +2,93 @@
 #include <GLFW/glfw3.h>
 #include <math.h>
 #include "../external/tracy/public/tracy/TracyC.h"
+#include "tracy_vk_c.h"
+#include <string.h>
 
+void immediate_submit_copy(Application* app, FrameData* frameData, AllocatedBuffer src, AllocatedBuffer dst, size_t size) {
+    u32 graphicsQueueFamilyIndex = find_graphics_queue_family_index(app->physicaldevice);
+    VkQueue graphicsQueue;
+    vkGetDeviceQueue(app->device, graphicsQueueFamilyIndex, 0, &graphicsQueue);
 
+    VkCommandBuffer cmd = createCommandBuffer(app->device, frameData->commandPools[0], VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 
+    VkCommandBufferBeginInfo cmdBeginInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    vkBeginCommandBuffer(cmd, &cmdBeginInfo);
 
+    VkBufferCopy copy = {
+        .srcOffset = 0,
+        .dstOffset = 0,
+        .size = size,
+    };
+    vkCmdCopyBuffer(cmd, src.buffer, dst.buffer, 1, &copy);
 
+    vkEndCommandBuffer(cmd);
 
+    VkSubmitInfo submit = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cmd,
+    };
+    vkQueueSubmit(graphicsQueue, 1, &submit, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphicsQueue);
 
-void createDrawImage(Application* app, VmaAllocator allocator)
-{
+    vkFreeCommandBuffers(app->device, frameData->commandPools[0], 1, &cmd);
+}
+
+AllocatedBuffer create_buffer(VmaAllocator allocator, size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage) {
+    VkBufferCreateInfo bufferInfo = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = allocSize,
+        .usage = usage,
+    };
+
+    VmaAllocationCreateInfo vmaallocInfo = {
+        .usage = memoryUsage,
+    };
+
+    AllocatedBuffer newBuffer;
+    VK_CHECK(vmaCreateBuffer(allocator, &bufferInfo, &vmaallocInfo, &newBuffer.buffer, &newBuffer.allocation, NULL));
+
+    return newBuffer;
+}
+
+void create_curve_data(Application* app, FrameData* frameData, VmaAllocator allocator) {
+    const int num_segments = 1000;
+    app->curveVertexCount = num_segments + 1;
+    size_t bufferSize = app->curveVertexCount * 3 * sizeof(float);
+
+    float* vertices = malloc(bufferSize);
+
+    float a = 0.4f;
+    float b = 0.2f;
+
+    for (int i = 0; i <= num_segments; ++i) {
+        float t = (float)i / (float)num_segments * 20.0f;
+        vertices[i * 3 + 0] = a * cos(t);
+        vertices[i * 3 + 1] = a * sin(t);
+        vertices[i * 3 + 2] = b * (t - 10.0f);
+    }
+
+    AllocatedBuffer stagingBuffer = create_buffer(allocator, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+    void* data;
+    vmaMapMemory(allocator, stagingBuffer.allocation, &data);
+    memcpy(data, vertices, bufferSize);
+    vmaUnmapMemory(allocator, stagingBuffer.allocation);
+
+    free(vertices);
+
+    app->curveVertexBuffer = create_buffer(allocator, bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+
+    immediate_submit_copy(app, frameData, stagingBuffer, app->curveVertexBuffer, bufferSize);
+
+    vmaDestroyBuffer(allocator, stagingBuffer.buffer, stagingBuffer.allocation);
+}
+
+void createDrawImage(Application* app, VmaAllocator allocator) {
 	VkExtent3D extent = {
 	    app->width,
 	    app->height,
@@ -240,7 +318,7 @@ int main(void)
 	Application app = {0};
 	app.width = 800;
 	app.height = 600;
-
+    TracyVkCtxC* tracyCtx = NULL;
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	GLFWwindow* window = glfwCreateWindow(800, 600, "Vulkan", NULL, NULL);
@@ -286,32 +364,44 @@ int main(void)
 	FrameData frameData = {0};
 	initCommands(&frameData, &app);
 	createSyncObjects(&frameData, &app);
+    create_curve_data(&app, &frameData, app.allocator);
 	app.frameNumber = 0;
 
 	u32 graphicsQueueFamilyIndex = find_graphics_queue_family_index(app.physicaldevice);
 	VkQueue graphicsQueue;
 	vkGetDeviceQueue(app.device, graphicsQueueFamilyIndex, 0, &graphicsQueue);
 
-	VkDescriptorPoolSize poolSize = {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 10};
+	VkDescriptorPoolSize poolSizes[] = {
+        {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 10},
+        {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 10}
+    };
 	VkDescriptorPoolCreateInfo poolInfo = {};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfo.maxSets = 10; // number of descriptor sets we can allocate
-	poolInfo.poolSizeCount = 1;
-	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.poolSizeCount = 2;
+	poolInfo.pPoolSizes = poolSizes;
 	VkDescriptorPool descriptorPool;
 	VK_CHECK(vkCreateDescriptorPool(app.device, &poolInfo, NULL, &descriptorPool));
 	// 2. Create descriptor set layout
-	VkDescriptorSetLayoutBinding binding = {};
-	binding.binding = 0;
-	binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	binding.descriptorCount = 1; // one image at binding 0
-	binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-	binding.pImmutableSamplers = NULL;
+	VkDescriptorSetLayoutBinding imageBinding = {};
+	imageBinding.binding = 0;
+	imageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	imageBinding.descriptorCount = 1; // one image at binding 0
+	imageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	imageBinding.pImmutableSamplers = NULL;
+
+    VkDescriptorSetLayoutBinding bufferBinding = {};
+    bufferBinding.binding = 1;
+    bufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bufferBinding.descriptorCount = 1;
+    bufferBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutBinding bindings[] = {imageBinding, bufferBinding};
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 1;
-	layoutInfo.pBindings = &binding;
+	layoutInfo.bindingCount = 2;
+	layoutInfo.pBindings = bindings;
 	VkDescriptorSetLayout drawImageDescriptorLayout;
 	VK_CHECK(vkCreateDescriptorSetLayout(app.device, &layoutInfo, NULL, &drawImageDescriptorLayout));
 
@@ -328,13 +418,39 @@ int main(void)
 	// 4. Update descriptor with draw image as storage image
 	update_storage_image_descriptor(&app, descriptorSet);
 
+    VkDescriptorBufferInfo bufferInfo = {
+        .buffer = app.curveVertexBuffer.buffer,
+        .offset = 0,
+        .range = app.curveVertexCount * 3 * sizeof(float),
+    };
+
+    VkWriteDescriptorSet bufferWrite = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = descriptorSet,
+        .dstBinding = 1,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .pBufferInfo = &bufferInfo,
+    };
+    vkUpdateDescriptorSets(app.device, 1, &bufferWrite, 0, NULL);
+
+
 	// 5. Create compute pipeline for compiledshaders/grad.comp.spv
 	VkPipelineLayout computePipelineLayout;
 	{
+        VkPushConstantRange pushConstantRange = {
+            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+            .offset = 0,
+            .size = sizeof(u32),
+        };
+
 		VkPipelineLayoutCreateInfo plInfo = {
 		    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		    .setLayoutCount = 1,
 		    .pSetLayouts = &drawImageDescriptorLayout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &pushConstantRange,
 		};
 		VK_CHECK(vkCreatePipelineLayout(app.device, &plInfo, NULL, &computePipelineLayout));
 	}
@@ -413,6 +529,7 @@ int main(void)
 		// Dispatch grad.comp to fill the draw image
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 1, &descriptorSet, 0, NULL);
+        vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32), &app.curveVertexCount);
 		uint32_t gx = (app.drawExtent.width + 15u) / 16u;
 		uint32_t gy = (app.drawExtent.height + 15u) / 16u;
 		vkCmdDispatch(cmd, gx, gy, 1);
@@ -525,6 +642,8 @@ int main(void)
 		vkDestroyImageView(app.device, app.drawImage.imageView, NULL);
 	if (app.drawImage.image)
 		vmaDestroyImage(app.allocator, app.drawImage.image, app.drawImage.allocation);
+
+    vmaDestroyBuffer(app.allocator, app.curveVertexBuffer.buffer, app.curveVertexBuffer.allocation);
 
 	destroy_swapchain_resources(&app);
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)

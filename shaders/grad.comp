@@ -1,29 +1,59 @@
-//GLSL version to use
 #version 460
 
-//size of a workgroup for compute
 layout (local_size_x = 16, local_size_y = 16) in;
 
-//descriptor bindings for the pipeline
-layout(rgba16f,set = 0, binding = 0) uniform image2D image;
+layout(rgba16f, set = 0, binding = 0) uniform image2D image;
 
+layout(std430, set = 0, binding = 1) buffer readonly VertexBuffer {
+    vec3 vertices[];
+};
 
-void main() 
+layout(push_constant) uniform PushConstants {
+    uint vertexCount;
+};
+
+// Function to project a 3D point to 2D screen space
+vec2 project(vec3 pos) {
+    // A simple orthographic projection for now
+    return pos.xy;
+}
+
+// Function to calculate the distance from a point to a line segment
+float distanceToLineSegment(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+void main()
 {
     ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
-	ivec2 size = imageSize(image);
+    ivec2 size = imageSize(image);
 
     if(texelCoord.x < size.x && texelCoord.y < size.y)
     {
+        vec2 uv = vec2(texelCoord) / vec2(size);
+        vec4 color = vec4(uv.x, uv.y, 0.0, 1.0); // Gradient background
 
-        vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+        float min_dist = 1000.0;
 
-        if(gl_LocalInvocationID.x != 0 && gl_LocalInvocationID.y != 0)
-        {
-            color.x = float(texelCoord.x)/(size.x);
-            color.y = float(texelCoord.y)/(size.y);	
+        for (int i = 0; i < vertexCount - 1; ++i) {
+            vec2 p1 = project(vertices[i]);
+            vec2 p2 = project(vertices[i+1]);
+
+            // transform from [-1, 1] to screen space
+            p1 = (p1 + 1.0) / 2.0 * vec2(size);
+            p2 = (p2 + 1.0) / 2.0 * vec2(size);
+
+            float dist = distanceToLineSegment(vec2(texelCoord), p1, p2);
+            min_dist = min(min_dist, dist);
         }
-    
+
+        if (min_dist < 1.5) {
+            color = vec4(1.0, 1.0, 1.0, 1.0); // White color for the curve
+        }
+
         imageStore(image, texelCoord, color);
     }
 }

@@ -16,6 +16,12 @@ typedef struct AllocatedImage
 	VkFormat imageFormat;
 } AllocatedImage;
 
+typedef struct AllocatedBuffer
+{
+	VkBuffer buffer;
+	VmaAllocation allocation;
+} AllocatedBuffer;
+
 typedef struct Application // Moved to top
 {
 	VkInstance instance;
@@ -28,7 +34,7 @@ typedef struct Application // Moved to top
 	u32 width;
 	u32 height;
 	bool framebufferResized; // set by GLFW callback on resize
-	u32 frameNumber;
+	u64 frameNumber;
 	VkFormat swapchainFormat;
 	VkColorSpaceKHR swapchainColorSpace;
 	VkImage* swapchainImages;
@@ -41,6 +47,8 @@ typedef struct Application // Moved to top
 	VkSemaphore* presentSemaphores;
 	AllocatedImage drawImage; // High-precision offscreen render target
 	VkExtent3D drawExtent;    // Resolution of drawImage
+	AllocatedBuffer curveVertexBuffer;
+	u32 curveVertexCount;
 } Application;
 #define MAX_FRAMES_IN_FLIGHT 2
 
