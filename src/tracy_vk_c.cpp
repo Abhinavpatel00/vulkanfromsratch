@@ -4,124 +4,45 @@
 // #define TRACY_CALLSTACK 10      // example callstack depth
 // #define TRACY_ON_DEMAND         // optional: only record when UI is connected
 
-#include <vulkan/vulkan.h>
+#include "../external/volk/volk.h"
 #include "../external/tracy/public/tracy/TracyVulkan.hpp" 
-// from Tracy
-#include "../external/tracy/public/tracy/Tracy.hpp"
+#include "tracy_vk_c.h"
+#include <string.h>
 
-extern "C" {
-
-struct TracyVkCtxC {
-    TracyVkCtx ctx; // this is tracy::VkCtx*, typedef’d to TracyVkCtx
-};
-
-struct TracyVkZoneC {
-    // We heap-allocate VkCtxScope so we can end it later; dtor logs the end.
-    tracy::VkCtxScope* scope;
-};
-
-// --- Contexts ---
-
-TracyVkCtxC* tracy_vk_context_create(
+TracyVkCtxHandle tracy_vk_context_create(
     VkPhysicalDevice physdev,
     VkDevice device,
     VkQueue queue,
-    VkCommandBuffer cmdbuf
-) {
-    TracyVkCtx c = TracyVkContext( physdev, device, queue, cmdbuf );
-    if (!c) return nullptr;
-    auto* out = new TracyVkCtxC{ c };
-    return out;
+    VkCommandBuffer cmdbuf)
+{
+    return TracyVkContext(physdev, device, queue, cmdbuf);
 }
 
-TracyVkCtxC* tracy_vk_context_create_calibrated(
-    VkPhysicalDevice physdev,
-    VkDevice device,
-    VkQueue queue,
-    VkCommandBuffer cmdbuf,
-    PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT gpdctd,
-    PFN_vkGetCalibratedTimestampsEXT gct
-) {
-    TracyVkCtx c = TracyVkContextCalibrated( physdev, device, queue, cmdbuf, gpdctd, gct );
-    if (!c) return nullptr;
-    auto* out = new TracyVkCtxC{ c };
-    return out;
+void tracy_vk_context_destroy(TracyVkCtxHandle ctx)
+{
+    TracyVkDestroy(static_cast<tracy::VkCtx*>(ctx));
 }
 
-TracyVkCtxC* tracy_vk_context_create_host_calibrated(
-    VkPhysicalDevice physdev,
-    VkDevice device,
-    PFN_vkResetQueryPoolEXT qpreset,
-    PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT gpdctd,
-    PFN_vkGetCalibratedTimestampsEXT gct
-) {
-#if defined(VK_EXT_host_query_reset)
-    TracyVkCtx c = TracyVkContextHostCalibrated( physdev, device, qpreset, gpdctd, gct );
-    if (!c) return nullptr;
-    auto* out = new TracyVkCtxC{ c };
-    return out;
-#else
-    (void)physdev; (void)device; (void)qpreset; (void)gpdctd; (void)gct;
-    return nullptr;
-#endif
+void tracy_vk_context_name(TracyVkCtxHandle ctx, const char* name)
+{
+    TracyVkContextName(static_cast<tracy::VkCtx*>(ctx), name, (uint16_t)strlen(name));
 }
 
-void tracy_vk_context_destroy(TracyVkCtxC* ctx) {
-    if (!ctx) return;
-    TracyVkDestroy( ctx->ctx );
-    delete ctx;
+void tracy_vk_collect(TracyVkCtxHandle ctx, VkCommandBuffer cmdbuf)
+{
+    static_cast<tracy::VkCtx*>(ctx)->Collect(cmdbuf);
 }
 
-// --- Naming ---
-
-void tracy_vk_context_name(TracyVkCtxC* ctx, const char* name) {
-    if (!ctx || !name) return;
-    TracyVkContextName( ctx->ctx, name, (uint16_t) strlen(name) );
+void tracy_vk_zone(TracyVkCtxHandle ctx, VkCommandBuffer cmdbuf, const char* name)
+{
+    tracy::SourceLocationData srcloc = { name, "", "", 0, 0 };
+    tracy::VkCtxScope scope(static_cast<tracy::VkCtx*>(ctx), &srcloc, cmdbuf, 6, true);
 }
 
-// --- Collection ---
-
-void tracy_vk_collect(TracyVkCtxC* ctx, VkCommandBuffer cmdbuf) {
-    if (!ctx) return;
-    TracyVkCollect( ctx->ctx, cmdbuf );
+void tracy_vk_zone_c(TracyVkCtxHandle ctx, VkCommandBuffer cmdbuf, const char* name, uint32_t color)
+{
+    tracy::SourceLocationData srcloc = { name, "", "", 0, color };
+    tracy::VkCtxScope scope(static_cast<tracy::VkCtx*>(ctx), &srcloc, cmdbuf, 6, true);
 }
 
-void tracy_vk_collect_host(TracyVkCtxC* ctx) {
-    if (!ctx) return;
-    TracyVkCollectHost( ctx->ctx );
-}
-
-// --- Zones ---
-
-TracyVkZoneC* tracy_vk_zone_begin(
-    TracyVkCtxC* cctx,
-    VkCommandBuffer cmdbuf,
-    const char* name,
-    const char* file,
-    const char* function,
-    uint32_t line,
-    int active
-) {
-    if (!cctx) return nullptr;
-    // Use constructor that builds a source location on the fly.
-    auto* z = new TracyVkZoneC;
-    z->scope = new tracy::VkCtxScope(
-        cctx->ctx,
-        line,
-        file, file ? strlen(file) : 0,
-        function, function ? strlen(function) : 0,
-        name ? name : "", name ? strlen(name) : 0,
-        cmdbuf,
-        active != 0 // bool
-    );
-    return z;
-}
-
-void tracy_vk_zone_end(TracyVkZoneC* zone) {
-    if (!zone) return;
-    delete zone->scope;  // ~VkCtxScope() records the end + second timestamp
-    delete zone;
-}
-
-} // extern "C"
-
+// extern "C"
