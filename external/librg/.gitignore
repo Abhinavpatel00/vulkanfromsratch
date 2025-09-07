@@ -1,0 +1,27 @@
+# Folders
+build/*
+build_web/*
+emsdk
+misc/deploy/
+node_modules/
+pkg/
+
+# vs shit
+*.dir/
+x64/
+
+# Other
+.DS_store
+
+# local build scripts
+build.sh
+build.bat
+package-lock.json
+
+# configs
+.clangd
+
+# gtags
+GPATH
+GRTAGS
+GTAGS

@@ -1,0 +1,37 @@
+[submodule "external/nob"]
+	path = external/nob
+	url = https://github.com/tsoding/nob.h.git
+[submodule "external/VulkanMemoryAllocator"]
+	path = external/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "external/nuklear"]
+	path = external/nuklear
+	url = https://github.com/Immediate-Mode-UI/Nuklear
+[submodule "external/volk"]
+	path = external/volk
+	url = https://github.com/zeux/volk.git
+[submodule "external/cgltf"]
+	path = external/cgltf
+	url = https://github.com/jkuhlmann/cgltf.git
+[submodule "external/SPIRV-Reflect"]
+	path = external/SPIRV-Reflect
+	url = https://github.com/KhronosGroup/SPIRV-Reflect.git
+[submodule "external/stb"]
+	path = external/stb
+	url = git@github.com:nothings/stb.git
+
+[submodule "external/zpl"]
+	path = external/zpl
+	url = https://github.com/zpl-c/zpl.git
+[submodule "external/librg"]
+	path = external/librg
+	url = https://github.com/zpl-c/librg
+[submodule "external/dds-ktx"]
+	path = external/dds-ktx
+	url = https://github.com/septag/dds-ktx.git
+[submodule "external/c89atomic"]
+	path = external/c89atomic
+	url = https://github.com/mackron/c89atomic.git
+[submodule "external/tracy"]
+	path = external/tracy
+	url = https://github.com/wolfpld/tracy

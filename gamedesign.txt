@@ -1,0 +1,96 @@
+# Extended Game Design: "Havenwood" - A Cozy Collaborative Building Game
+
+## Core Vision
+Havenwood is a peaceful, vegan-friendly multiplayer world where players collaborate to build charming settlements in harmony with nature. Thousands of cute animals roam freely through player-created landscapes, creating a living, breathing ecosystem that responds to player actions.
+
+## Core Gameplay Pillars
+
+### 1. Cozy Building & Terraforming (Tiny Glade Inspired)
+- **Organic Building System**: Structures grow and form naturally rather than appearing instantly
+- **Intuitive Terraforming**: Sculpt terrain with gesture-based controls that feel like gardening
+- **Living Architecture**: Buildings develop character over time - vines grow on walls, birds nest in eaves
+- **Seasons System**: Environment changes visually and mechanically with seasons (snow in winter, blossoms in spring)
+
+### 2. Thriving Ecosystem (Thousands of Animals)
+- **Animal Personalities**: Each animal has unique behaviors, preferences, and relationships
+- **Ecosystem Simulation**: Animals interact with each other and player creations (deer graze, rabbits burrow, birds perch on structures)
+- **Rescue & Rehabilitation**: Players help injured animals and provide habitats for endangered species
+- **Animal Friends**: Befriended animals provide benefits (squirrels help find resources, owls deliver messages)
+
+### 3. Collaborative Multiplayer
+- **Shared World Building**: Players work together on community projects (bridges, parks, temples)
+- **Specialization Roles**: Players can focus on different aspects (gardening, architecture, animal care)
+- **Non-Competitive Progression**: Advancement through creating beauty and helping others
+- **Neighborhood System**: Group territories with shared resources and bonuses
+
+### 4. Social Hub & Sharing (Township Inspired)
+- **Weekly Markets**: Player-organized markets to trade rare items and show off creations
+- **Blueprint Sharing**: Share building designs through an in-world library system
+- **Visitor Mode**: Visit other players' worlds to get inspiration and leave gifts
+- **Community Goals**: Server-wide projects that unlock new areas and rewards
+
+### 5. Gentle Progression (Clash of Clans Inspired)
+- **Season Pass Alternative**: "Growth Journal" that tracks peaceful accomplishments
+- **Prestige System**: Prestiging resets certain progress but grants unique cosmetic rewards
+- **Resource Management**: Renewable resources that require nurturing rather than exploitation
+- **Technology Tree**: "Wisdom Tree" focused on ecological knowledge and building techniques
+
+## Detailed World Systems
+
+### Living World Systems
+- **Dynamic Weather**: Rain helps plants grow, snow allows for special activities
+- **Day/N Cycle**: Different animals and activities appear at different times
+- **Plant Propagation**: Plants naturally spread based on environmental conditions
+- **Firefly Shows**: Nightly events where players can gather to watch synchronized firefly displays
+
+### Animal Behavior System
+- **Complex Needs System**: Animals have dietary, habitat, and social needs
+- **Migration Patterns**: Herds move between areas based on season and player development
+- **Reproduction**: Animals naturally breed when conditions are right (visual only, no exploitation)
+- **Rescue Missions**: Find and help injured animals during weather events
+
+### Building & Crafting
+- **Material Gathering**: Resources regenerate naturally and can be cultivated
+- **Cooperative Building**: Multiple players can work on large structures simultaneously
+- **Blueprint Creation**: Save and share building designs with the community
+- **Eco-Friendly Upgrades**: Structures can be enhanced with living roofs, bird houses, etc.
+
+### Social Systems
+- **Non-Verbal Communication**: Extensive emote system and visual signals for cross-language play
+- **Gift Economy**: Players can leave gifts for others without expectation of return
+- **Community Spaces**: Shared gardens, meditation spots, and viewing areas
+- **Event Hosting**: Players can organize concerts, weddings, and festivals
+
+## Progression & Rewards
+
+### Player Advancement
+- **Mastery Tracks**: Specialize in building, gardening, or animal care
+- **Aesthetic Unlocks**: New building materials, plant varieties, and animal companions
+- **Title System**: Earn titles like "Friend to Foxes" or "Master Gardener"
+- **Cosmic Events**: Rare astronomical events that provide unique rewards
+
+### World Advancement
+- **Ecosystem Health Meter**: Collective effort improves server-wide environment
+- **Seasonal Unlocks**: Special content available during real-world seasons
+- **Legendary Animals**: Rare creatures that appear when conditions are perfect
+- **Mystical Events**: Occasional magical occurrences that transform areas temporarily
+
+## Modding Support
+- **Custom Animal Species**: Players can design and share new animals
+- **Building Parts**: Create new architectural elements and decorations
+- **Quest Designer**: Build and share custom storylines and challenges
+- **Season Mods**: Community-created seasonal content and events
+
+## Technical Considerations for Future Expansion
+- **Ray Tracing Ready**: Architecture designed for easy integration of both compute and native ray tracing
+- **Cross-Platform Play**: Designed from ground up for PC and eventual console release
+- **Scale Management**: Systems to handle thousands of entities without performance issues
+- **Cloud Syncing**: Player creations and world state saved across devices
+
+## Art Style & Atmosphere
+- **Warm Color Palette**: Rich greens, warm browns, soft pastels
+- **Soft Lighting**: Global illumination with gentle shadows
+- **Subtle Animations**: Leaves rustle, water ripples, structures sway gently
+- **Ambient Soundscape**: Natural sounds with dynamic music that responds to player actions
+
+This design focuses on creating a peaceful, collaborative experience that emphasizes creativity, community, and connection with nature - a vegan-friendly world where players build beauty together rather than compete for resources.

@@ -1,0 +1,5 @@
+https://interplayoflight.wordpress.com/2020/11/01/adding-support-for-two-level-acceleration-for-raytracing/
+
+https://www.gamedeveloper.com/programming/atmospheric-scattering-and-volumetric-fog-algorithm-part-1#close-modal
+
+https://ijdykeman.github.io/graphics/simple_fog_shader

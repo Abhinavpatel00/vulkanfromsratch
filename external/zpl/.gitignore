@@ -1,0 +1,33 @@
+# project files & folders
+build/
+node_modules/
+misc/deploy/
+
+# other
+.DS_Store
+.swp
+.vscode
+.vs
+package-lock.json
+build.*
+
+# workdir
+work/
+
+# qtcreator
+zpl.creator
+zpl.creator.*
+zpl.cflags
+zpl.config
+zpl.cxxflags
+zpl.includes
+zpl.files
+
+# gtags
+GPATH
+GRTAGS
+GTAGS
+
+# misc
+compile_commands.json
+
