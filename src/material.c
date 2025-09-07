@@ -498,7 +498,9 @@ static int reflect_spv_to_material_reflection(const uint32_t *spv, size_t word_c
             case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: mb->type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC; break;
             default: mb->type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; break;
         }
-        mb->vecSize = (b->block ? b->block->size : 0);
+    // In this SPIRV-Reflect version, 'block' is a struct (not a pointer)
+    // Size will be 0 for non-block resources (e.g., images/samplers)
+    mb->vecSize = b->block.size;
         mb->name = string_dup(b->name);
     }
     FREE(bindings);

@@ -2,6 +2,8 @@
 #include <GLFW/glfw3.h>
 #include <math.h>
 #include "../external/tracy/public/tracy/TracyC.h"
+// Minimal material system demo
+#include "material.h"
 
 
 
@@ -292,70 +294,28 @@ int main(void)
 	VkQueue graphicsQueue;
 	vkGetDeviceQueue(app.device, graphicsQueueFamilyIndex, 0, &graphicsQueue);
 
-	VkDescriptorPoolSize poolSize = {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 10};
-	VkDescriptorPoolCreateInfo poolInfo = {};
-	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolInfo.maxSets = 10; // number of descriptor sets we can allocate
-	poolInfo.poolSizeCount = 1;
-	poolInfo.pPoolSizes = &poolSize;
-	VkDescriptorPool descriptorPool;
-	VK_CHECK(vkCreateDescriptorPool(app.device, &poolInfo, NULL, &descriptorPool));
-	// 2. Create descriptor set layout
-	VkDescriptorSetLayoutBinding binding = {};
-	binding.binding = 0;
-	binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	binding.descriptorCount = 1; // one image at binding 0
-	binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-	binding.pImmutableSamplers = NULL;
+	// --- Minimal Material System usage: create a checkerboard texture ---
+	MaterialSystem matSys = {0};
+	// Initialize after command pools exist so we can pass one for transfers
+	VK_CHECK(material_system_init(&matSys, app.device, app.physicaldevice, graphicsQueue, frameData.commandPools[0]) == 0 ? VK_SUCCESS : VK_ERROR_INITIALIZATION_FAILED);
 
-	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 1;
-	layoutInfo.pBindings = &binding;
-	VkDescriptorSetLayout drawImageDescriptorLayout;
-	VK_CHECK(vkCreateDescriptorSetLayout(app.device, &layoutInfo, NULL, &drawImageDescriptorLayout));
-
-	// 3. Allocate descriptor set(s)
-	VkDescriptorSetAllocateInfo allocInfo = {};
-	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = descriptorPool;
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &drawImageDescriptorLayout;
-
-	VkDescriptorSet descriptorSet;
-	VK_CHECK(vkAllocateDescriptorSets(app.device, &allocInfo, &descriptorSet));
-
-	// 4. Update descriptor with draw image as storage image
-	update_storage_image_descriptor(&app, descriptorSet);
-
-	// 5. Create compute pipeline for compiledshaders/grad.comp.spv
-	VkPipelineLayout computePipelineLayout;
-	{
-		VkPipelineLayoutCreateInfo plInfo = {
-		    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-		    .setLayoutCount = 1,
-		    .pSetLayouts = &drawImageDescriptorLayout,
-		};
-		VK_CHECK(vkCreatePipelineLayout(app.device, &plInfo, NULL, &computePipelineLayout));
+	const int texW = 256, texH = 256, texC = 4; // RGBA8
+	unsigned char *checker = (unsigned char*)malloc((size_t)texW * texH * texC);
+	for (int y = 0; y < texH; ++y) {
+		for (int x = 0; x < texW; ++x) {
+			int c = (((x >> 4) ^ (y >> 4)) & 1) ? 255 : 30;
+			size_t idx = ((size_t)y * texW + x) * 4;
+			checker[idx + 0] = (unsigned char)c;
+			checker[idx + 1] = (unsigned char)c;
+			checker[idx + 2] = (unsigned char)c;
+			checker[idx + 3] = 255;
+		}
 	}
+	// generate_mips=1 ensures TRANSFER_SRC usage for blits
+	Texture *demoTexture = texture_manager_load_from_memory(&matSys.tex_manager, "checkerboard", checker, texW, texH, texC, /*generate_mips*/1);
+	free(checker);
 
-	VkPipeline computePipeline;
-	{
-		VkShaderModule compModule = LoadShaderModule("compiledshaders/grad.comp.spv", app.device);
-		VkPipelineShaderStageCreateInfo stage = {
-		    .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-		    .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-		    .module = compModule,
-		    .pName = "main",
-		};
-		VkComputePipelineCreateInfo cpInfo = {
-		    .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-		    .stage = stage,
-		    .layout = computePipelineLayout,
-		};
-		VK_CHECK(vkCreateComputePipelines(app.device, VK_NULL_HANDLE, 1, &cpInfo, NULL, &computePipeline));
-		vkDestroyShaderModule(app.device, compModule, NULL);
-	}
+	// Note: We skip the compute pipeline and will blit the material-system texture instead.
 	// Hook resize callback and user pointer
 	glfwSetWindowUserPointer(window, &app);
 	glfwSetFramebufferSizeCallback(window, glfw_framebuffer_resize_callback);
@@ -367,7 +327,6 @@ int main(void)
 		if (app.framebufferResized)
 		{
 			recreate_swapchain(&app);
-			update_storage_image_descriptor(&app, descriptorSet);
 			app.framebufferResized = false;
 		}
 		u32 frameIndex = app.frameNumber % MAX_FRAMES_IN_FLIGHT;
@@ -379,7 +338,6 @@ int main(void)
 		if (acq == VK_ERROR_OUT_OF_DATE_KHR)
 		{
 			recreate_swapchain(&app);
-			update_storage_image_descriptor(&app, descriptorSet);
 			continue;
 		}
 		if (acq == VK_SUBOPTIMAL_KHR)
@@ -397,32 +355,47 @@ int main(void)
 		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 		    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 		vkBeginCommandBuffer(cmd, &cmdinfo);
-		// Prepare draw image for compute writes: UNDEFINED -> GENERAL
-		VkImageMemoryBarrier2 drawToGeneral = imageBarrier(
+		// Prepare: transition demo texture to TRANSFER_SRC and draw image to TRANSFER_DST
+		VkImageMemoryBarrier2 texToSrc = imageBarrier(
+		    demoTexture->image,
+		    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+		    0,
+		    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		    VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		    VK_ACCESS_2_TRANSFER_READ_BIT,
+		    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		    VK_IMAGE_ASPECT_COLOR_BIT,
+		    0, 1);
+		VkImageMemoryBarrier2 drawToDst = imageBarrier(
 		    app.drawImage.image,
 		    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
 		    0,
 		    VK_IMAGE_LAYOUT_UNDEFINED,
-		    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-		    VK_ACCESS_2_SHADER_WRITE_BIT,
-		    VK_IMAGE_LAYOUT_GENERAL,
+		    VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		    VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		    VK_IMAGE_ASPECT_COLOR_BIT,
 		    0, 1);
-		pipelineBarrier(cmd, 0, 0, NULL, 1, &drawToGeneral);
+		VkImageMemoryBarrier2 prepBarriers[2] = {texToSrc, drawToDst};
+		pipelineBarrier(cmd, 0, 0, NULL, 2, prepBarriers);
 
-		// Dispatch grad.comp to fill the draw image
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
-		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 1, &descriptorSet, 0, NULL);
-		uint32_t gx = (app.drawExtent.width + 15u) / 16u;
-		uint32_t gy = (app.drawExtent.height + 15u) / 16u;
-		vkCmdDispatch(cmd, gx, gy, 1);
+		// Blit the checkerboard texture into the offscreen draw image
+		VkExtent3D srcTexExtent = {demoTexture->width, demoTexture->height, 1};
+		VkExtent3D dstDrawExtent = {app.drawExtent.width, app.drawExtent.height, 1};
+		CopyImagetoImage(cmd,
+		    demoTexture->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		    app.drawImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		    srcTexExtent, dstDrawExtent,
+		    VK_IMAGE_ASPECT_COLOR_BIT,
+		    0, 0, 0, 0, 1,
+		    VK_FILTER_LINEAR);
 
-		// Prepare for copy: draw GENERAL -> TRANSFER_SRC, swap UNDEFINED -> TRANSFER_DST
+		// Prepare for copy to swapchain: draw -> TRANSFER_SRC, swap -> TRANSFER_DST
 		VkImageMemoryBarrier2 drawToSrc = imageBarrier(
 		    app.drawImage.image,
-		    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-		    VK_ACCESS_2_SHADER_WRITE_BIT,
-		    VK_IMAGE_LAYOUT_GENERAL,
+		    VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		    VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		    VK_PIPELINE_STAGE_2_TRANSFER_BIT,
 		    VK_ACCESS_2_TRANSFER_READ_BIT,
 		    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -508,7 +481,6 @@ int main(void)
 		if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR)
 		{
 			recreate_swapchain(&app);
-			update_storage_image_descriptor(&app, descriptorSet);
 		}
 		else
 		{
@@ -535,11 +507,8 @@ int main(void)
 		vkDestroyCommandPool(app.device, frameData.commandPools[i], NULL);
 	}
 	// swapchain already destroyed by destroy_swapchain_resources
-	// Destroy compute/descriptor objects
-	vkDestroyPipeline(app.device, computePipeline, NULL);
-	vkDestroyPipelineLayout(app.device, computePipelineLayout, NULL);
-	vkDestroyDescriptorSetLayout(app.device, drawImageDescriptorLayout, NULL);
-	vkDestroyDescriptorPool(app.device, descriptorPool, NULL);
+	// Material system cleanup
+	material_system_shutdown(&matSys);
 	if (app.allocator)
 		vmaDestroyAllocator(app.allocator);
 	vkDestroyDevice(app.device, NULL);

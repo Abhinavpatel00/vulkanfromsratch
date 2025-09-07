@@ -34,6 +34,7 @@ c_src_files=(
     "$SRC_FOLDER/initialise.c"
     "$SRC_FOLDER/helpers.c"
     "$SRC_FOLDER/descriptor.c"
+    "$SRC_FOLDER/material.c"
 
     "external/SPIRV-Reflect/spirv_reflect.c"
 )
