@@ -13,6 +13,6 @@ void main()
 
     vec2 uv = (vec2(tc) + 0.2) / vec2(size);
     // Simple colorful gradient, no loops, no buffers
-    vec3 col = vec3(uv.x, uv.y, 0.5 + 0.5 * cos(uv.x));
+    vec3 col = vec3(uv.x, uv.y, 0.5 + 0.5 * tan(uv.x));
     imageStore(image, tc, vec4(col, 1.0));
 }
