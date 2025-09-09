@@ -47,8 +47,8 @@ typedef struct Application // Moved to top
 	VkSemaphore* presentSemaphores;
 	AllocatedImage drawImage; // High-precision offscreen render target
 	VkExtent3D drawExtent;    // Resolution of drawImage
-	AllocatedBuffer curveVertexBuffer;
-	u32 curveVertexCount;
+	AllocatedBuffer curveVertexBuffer; // optional in minimal compute example
+	u32 curveVertexCount; // optional in minimal compute example
 } Application;
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -61,20 +61,10 @@ typedef struct FrameData
 	VkFence inFlightFences[MAX_FRAMES_IN_FLIGHT];
 } FrameData;
 
-// Function Declarations
-// from helpers.c
-VkBool32 hasStencil(VkFormat f);
-VkShaderModule LoadShaderModule(const char* filepath, VkDevice device);
-VkFence CreateFence(VkDevice device);
-VkImageMemoryBarrier2 imageBarrier(VkImage image, VkPipelineStageFlags2 srcStageMask, VkAccessFlags2 srcAccessMask, VkImageLayout currentLayout, VkPipelineStageFlags2 dstStageMask, VkAccessFlags2 dstAccessMask, VkImageLayout newLayout, VkImageAspectFlags aspectMask, uint32_t baseMipLevel, uint32_t levelCount);
-void pipelineBarrier(VkCommandBuffer commandBuffer, VkDependencyFlags dependencyFlags, size_t bufferBarrierCount, const VkBufferMemoryBarrier2* bufferBarriers, size_t imageBarrierCount, const VkImageMemoryBarrier2* imageBarriers);
+// Entry point
+int main(void);
 
-// from main.c
-VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback( // Added declaration
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-    void* pUserData);
+// Instance & Device Setup
 VkInstance createInstance();
 void setupDebugMessenger(Application* app);
 void cleanupDebugMessenger(Application* app);
@@ -85,21 +75,56 @@ VkDevice createLogicalDevice(VkPhysicalDevice pickedphysicaldevice);
 void create_surface(Application* app, GLFWwindow* window);
 void selectSwapchainFormat(Application* app);
 VkSwapchainKHR createSwapchain(Application* app);
-VkShaderModule LoadShaderModule(const char* filepath, VkDevice device);
+void createSwapchainImageViews(Application* app, VkSwapchainKHR swapchain);
+
+// Swapchain Lifecycle
+void destroy_swapchain_resources(Application* app);
+void recreate_swapchain(Application* app);
+void glfw_framebuffer_resize_callback(GLFWwindow* window, int width, int height);
+
+// Resource Creation & Utilities
+AllocatedBuffer create_buffer(VmaAllocator allocator, size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+void createDrawImage(Application* app, VmaAllocator allocator);
+void CopyImagetoImage(VkCommandBuffer cmd, VkImage src, VkImageLayout srcLayout, VkImage dst, VkImageLayout dstLayout,
+                      VkExtent3D srcExtent, VkExtent3D dstExtent, VkImageAspectFlags aspectMask,
+                      uint32_t srcMipLevel, uint32_t dstMipLevel,
+                      uint32_t srcBaseLayer, uint32_t dstBaseLayer,
+                      uint32_t layerCount, VkFilter filter);
+static void update_storage_image_descriptor(Application* app, VkDescriptorSet descriptorSet);
+
+// Command & Sync
+void initCommands(FrameData* frameData, Application* app);
+void createSyncObjects(FrameData* frameData, Application* app);
 VkCommandPool createCommandBufferPool(VkDevice device, VkPhysicalDevice physicaldevice);
 VkCommandBuffer createCommandBuffer(VkDevice device, VkCommandPool commandPool, VkCommandBufferLevel cBLevel);
-VkPipelineLayout createPipelineLayout(
-    VkDevice device,
-    const VkDescriptorSetLayout* setLayouts, uint32_t setLayoutCount,
-    const VkPushConstantRange* pushRanges, uint32_t pushRangeCount);
 
-VkImageView createImageView(VkDevice device, VkImage image, VkFormat format, VkImageViewType viewType, u32 baseMipLevel, u32 levelCount, u32 baseArrayLayer, u32 layerCount);
-void createSwapchainImageViews(Application* app, VkSwapchainKHR swapchain);
+// Pipeline & Shaders
+VkPipelineLayout createPipelineLayout(VkDevice device, const VkDescriptorSetLayout* setLayouts, uint32_t setLayoutCount,
+                                      const VkPushConstantRange* pushRanges, uint32_t pushRangeCount);
+VkShaderModule LoadShaderModule(const char* filepath, VkDevice device);
+
+// Synchronization Primitives
 VkSemaphore CreateSemaphore(VkDevice device);
+VkFence CreateFence(VkDevice device);
 
-// Resize / swapchain recreation
-void recreate_swapchain(Application* app);
-void destroy_swapchain_resources(Application* app);
-void glfw_framebuffer_resize_callback(GLFWwindow* window, int width, int height);
+// Image & Barrier Helpers
+VkImageMemoryBarrier2 imageBarrier(VkImage image, VkPipelineStageFlags2 srcStageMask, VkAccessFlags2 srcAccessMask,
+                                   VkImageLayout currentLayout, VkPipelineStageFlags2 dstStageMask, VkAccessFlags2 dstAccessMask,
+                                   VkImageLayout newLayout, VkImageAspectFlags aspectMask,
+                                   uint32_t baseMipLevel, uint32_t levelCount);
+void pipelineBarrier(VkCommandBuffer commandBuffer, VkDependencyFlags dependencyFlags,
+                     size_t bufferBarrierCount, const VkBufferMemoryBarrier2* bufferBarriers,
+                     size_t imageBarrierCount, const VkImageMemoryBarrier2* imageBarriers);
+VkImageView createImageView(VkDevice device, VkImage image, VkFormat format, VkImageViewType viewType,
+                            u32 baseMipLevel, u32 levelCount, u32 baseArrayLayer, u32 layerCount);
+VkBool32 hasStencil(VkFormat f);
+
+// Debugging
+VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                             VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                             const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                                             void* pUserData);
+
+
 
 #endif // MAIN_H

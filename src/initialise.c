@@ -395,3 +395,25 @@ VkSwapchainKHR createSwapchain(Application* app)
 
 	return swapchain;
 }
+
+
+void createSwapchainImageViews(Application* app, VkSwapchainKHR swapchain)
+{
+	vkGetSwapchainImagesKHR(app->device, swapchain, &app->swapchainImageCount, NULL);
+	printf("[Swapchain] Image count: %u\n", app->swapchainImageCount);
+
+	app->swapchainImages = malloc(app->swapchainImageCount * sizeof(VkImage));
+	app->swapchainImageViews = malloc(app->swapchainImageCount * sizeof(VkImageView));
+	app->presentSemaphores = malloc(app->swapchainImageCount * sizeof(VkSemaphore));
+
+	vkGetSwapchainImagesKHR(app->device, swapchain, &app->swapchainImageCount, app->swapchainImages);
+
+	for (u32 i = 0; i < app->swapchainImageCount; ++i)
+	{
+		app->swapchainImageViews[i] = createImageView(app->device, app->swapchainImages[i], app->swapchainFormat, VK_IMAGE_VIEW_TYPE_2D, 0, 1, 0, 1);
+		// Create a per-image semaphore to be signaled when rendering that image completes
+		app->presentSemaphores[i] = CreateSemaphore(app->device);
+	}
+
+	printf("[Swapchain] ✅ Created %u image views!\n", app->swapchainImageCount);
+}

@@ -40,8 +40,6 @@ c_src_files=(
 
 cpp_src_files=(
     "$SRC_FOLDER/vma.cpp"
-   "$SRC_FOLDER/tracy_vk_c.cpp"
-   "external/tracy/public/TracyClient.cpp"
 )
 
 # Flags
