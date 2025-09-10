@@ -1,4 +1,18 @@
 #include "main.h"
+#include <string.h>
+
+#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+#define GLFW_EXPOSE_NATIVE_WAYLAND
+#endif
+#if defined(VK_USE_PLATFORM_XCB_KHR)
+#define GLFW_EXPOSE_NATIVE_X11
+#endif
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
+
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+#include <windows.h>
+#endif
 
 VkInstance createInstance()
 {
@@ -56,19 +70,27 @@ VkInstance createInstance()
 	assert(glfwExtensionCount < 16);
 
 	const char* extensions[16];
-	for (u32 i = 0; i <glfwExtensionCount; ++i)
-	{
-		extensions[i] = glfwExtensions[i];
-		printf("Adding GLFW extension: %s\n", extensions[i]);
-	}
-
-	u32 extensionCount = glfwExtensionCount;
-
+	// for (u32 i = 0; i < glfwExtensionCount; ++i)
+	// {
+	// 	extensions[i] = glfwExtensions[i];
+	// 	printf("Adding GLFW extension: %s\n", extensions[i]);
+	// }
+	//
+	u32 extensionCount = 0;
+	//
 #ifdef _DEBUG
 	extensions[extensionCount++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+
 	printf("Adding debug extension: %s\n", VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
-
+#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+	extensions[extensionCount++] = VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
+#elif defined(VK_USE_PLATFORM_XCB_KHR)
+	extensions[extensionCount++] = VK_KHR_XCB_SURFACE_EXTENSION_NAME;
+#elif defined(VK_USE_PLATFORM_XLIB_KHR)
+	extensions[extensionCount++] = VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
+#endif
+	extensions[extensionCount++] = VK_KHR_SURFACE_EXTENSION_NAME;
 	createInfo.enabledExtensionCount = extensionCount;
 	createInfo.ppEnabledExtensionNames = extensions;
 
@@ -230,60 +252,104 @@ u32 find_graphics_queue_family_index(VkPhysicalDevice pickedPhysicalDevice)
 }
 VkDevice createLogicalDevice(VkPhysicalDevice pickedphysicaldevice)
 {
-    float queuePriorities = 1.0f;
+	float queuePriorities = 1.0f;
 
-    VkDeviceQueueCreateInfo queueInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = find_graphics_queue_family_index(pickedphysicaldevice),
-        .queueCount = 1,
-        .pQueuePriorities = &queuePriorities
-    };
+	VkDeviceQueueCreateInfo queueInfo = {
+	    .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+	    .queueFamilyIndex = find_graphics_queue_family_index(pickedphysicaldevice),
+	    .queueCount = 1,
+	    .pQueuePriorities = &queuePriorities};
 
-    // Enable synchronization2
-    VkPhysicalDeviceSynchronization2FeaturesKHR sync2Feature = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR,
-        .pNext = NULL,
-        .synchronization2 = VK_TRUE,
-    };
+	// Enable synchronization2
+	VkPhysicalDeviceSynchronization2FeaturesKHR sync2Feature = {
+	    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR,
+	    .pNext = NULL,
+	    .synchronization2 = VK_TRUE,
+	};
 
-    // Enable dynamic rendering
-    VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeature = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
-        .pNext = &sync2Feature, // chain sync2 AFTER dynamic rendering
-        .dynamicRendering = VK_TRUE,
-    };
+	// Enable dynamic rendering
+	VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeature = {
+	    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+	    .pNext = &sync2Feature, // chain sync2 AFTER dynamic rendering
+	    .dynamicRendering = VK_TRUE,
+	};
 
-    const char* deviceExtensions[] = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-        VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME, // required by dynamic rendering
-        VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,   // required by depth/stencil resolve
-        VK_KHR_MULTIVIEW_EXTENSION_NAME,             // required by renderpass2
-        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME      // required by vkCmdPipelineBarrier2
-    };
+	const char* deviceExtensions[] = {
+	    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+	    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+	    VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME, // required by dynamic rendering
+	    VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,   // required by depth/stencil resolve
+	    VK_KHR_MULTIVIEW_EXTENSION_NAME,             // required by renderpass2
+	    VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME      // required by vkCmdPipelineBarrier2
+	};
 
-    VkDeviceCreateInfo deviceInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &dynamicRenderingFeature, // chain starts here
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queueInfo,
-        .enabledExtensionCount = ARRAYSIZE(deviceExtensions),
-        .ppEnabledExtensionNames = deviceExtensions,
-    };
+	VkDeviceCreateInfo deviceInfo = {
+	    .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+	    .pNext = &dynamicRenderingFeature, // chain starts here
+	    .queueCreateInfoCount = 1,
+	    .pQueueCreateInfos = &queueInfo,
+	    .enabledExtensionCount = ARRAYSIZE(deviceExtensions),
+	    .ppEnabledExtensionNames = deviceExtensions,
+	};
 
-    VkDevice device;
-    VK_CHECK(vkCreateDevice(pickedphysicaldevice, &deviceInfo, NULL, &device));
-    return device;
+	VkDevice device;
+	VK_CHECK(vkCreateDevice(pickedphysicaldevice, &deviceInfo, NULL, &device));
+	return device;
 }
+VkSurfaceKHR createSurface(VkInstance instance, GLFWwindow* window)
+{
+// Note: GLFW has a helper glfwCreateWindowSurface but we're going to do this the hard way to reduce our reliance on GLFW Vulkan specifics
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+	VkWin32SurfaceCreateInfoKHR createInfo = {VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
+	createInfo.hinstance = GetModuleHandle(0);
+	createInfo.hwnd = glfwGetWin32Window(window);
+
+	VkSurfaceKHR surface = 0;
+	VK_CHECK(vkCreateWin32SurfaceKHR(instance, &createInfo, 0, &surface));
+	return surface;
+#elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
+	VkWaylandSurfaceCreateInfoKHR createInfo = {VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR};
+	createInfo.display = glfwGetWaylandDisplay();
+	createInfo.surface = glfwGetWaylandWindow(window);
+
+	VkSurfaceKHR surface = 0;
+	VK_CHECK(vkCreateWaylandSurfaceKHR(instance, &createInfo, 0, &surface));
+	return surface;
+#elif defined(VK_USE_PLATFORM_XCB_KHR)
+#include <X11/Xlib-xcb.h>
+	VkXcbSurfaceCreateInfoKHR createInfo = {VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR};
+	createInfo.connection = XGetXCBConnection(glfwGetX11Display());
+	createInfo.window = glfwGetX11Window(window);
+
+	VkSurfaceKHR surface = 0;
+	VK_CHECK(vkCreateXcbSurfaceKHR(instance, &createInfo, 0, &surface));
+	return surface;
+#elif defined(VK_USE_PLATFORM_XLIB_KHR)
+	VkXlibSurfaceCreateInfoKHR createInfo = {VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR};
+	createInfo.dpy = glfwGetX11Display();
+	createInfo.window = glfwGetX11Window(window);
+
+	VkSurfaceKHR surface = 0;
+	VK_CHECK(vkCreateXlibSurfaceKHR(instance, &createInfo, 0, &surface));
+	return surface;
+#else
+	// fallback to GLFW
+	VkSurfaceKHR surface = 0;
+	VK_CHECK(glfwCreateWindowSurface(instance, window, 0, &surface));
+	return surface;
+#endif
+}
+
 void create_surface(Application* app, GLFWwindow* window)
 {
-	VK_CHECK(glfwCreateWindowSurface(app->instance, window, NULL, &app->surface));
+	app->surface = createSurface(app->instance, window);
 }
+
 void selectSwapchainFormat(Application* app)
 {
 	u32 formatCount = 0;
 	vkGetPhysicalDeviceSurfaceFormatsKHR(app->physicaldevice, app->surface, &formatCount, NULL);
-
+	;
 	printf("[Swapchain] Available surface formats: %u\n", formatCount);
 
 	if (formatCount == 0)
@@ -395,7 +461,6 @@ VkSwapchainKHR createSwapchain(Application* app)
 
 	return swapchain;
 }
-
 
 void createSwapchainImageViews(Application* app, VkSwapchainKHR swapchain)
 {

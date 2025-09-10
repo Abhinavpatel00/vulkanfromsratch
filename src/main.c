@@ -2,7 +2,7 @@
 #include <GLFW/glfw3.h>
 #include <math.h>
 #include <string.h>
-
+#include "../external/SPIRV-Reflect/spirv_reflect.h"
 AllocatedBuffer create_buffer(VmaAllocator allocator, size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
 {
 	VkBufferCreateInfo bufferInfo = {
@@ -232,7 +232,16 @@ int main(void)
 	app.width = 800;
 	app.height = 600;
 	glfwInit();
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	#if defined (VK_USE_PLATFORM_WAYLAND_KHR)
+    glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
+    printf("Compiled with Wayland support\n");
+	#endif
+     #if defined(VK_USE_PLATFORM_XCB_KHR)
+    glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+    printf("Compiled with X11/XCB support\n");
+	#endif
+
+
 	GLFWwindow* window = glfwCreateWindow(800, 600, "Vulkan", NULL, NULL);
 	app.window = window;
 
@@ -325,14 +334,20 @@ int main(void)
 	// No storage buffer in minimal example
 
 	// 5. Create compute pipeline for compiledshaders/grad.comp.spv
+	// Include push constant range for `layout(push_constant) uniform Push { float time; }` in shader
 	VkPipelineLayout computePipelineLayout;
 	{
+		VkPushConstantRange pcr = {
+			.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+			.offset = 0,
+			.size = sizeof(float),
+		};
 		VkPipelineLayoutCreateInfo plInfo = {
-		    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-		    .setLayoutCount = 1,
-		    .pSetLayouts = &drawImageDescriptorLayout,
-		    .pushConstantRangeCount = 0,
-		    .pPushConstantRanges = NULL,
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.setLayoutCount = 1,
+			.pSetLayouts = &drawImageDescriptorLayout,
+			.pushConstantRangeCount = 1,
+			.pPushConstantRanges = &pcr,
 		};
 		VK_CHECK(vkCreatePipelineLayout(app.device, &plInfo, NULL, &computePipelineLayout));
 	}
@@ -409,9 +424,12 @@ int main(void)
 		    0, 1);
 		pipelineBarrier(cmd, 0, 0, NULL, 1, &drawToGeneral);
 
-		// Dispatch grad.comp to fill the draw image
+	// Dispatch grad.comp to fill the draw image
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 1, &descriptorSet, 0, NULL);
+	// Push current time (seconds) into the shader push constant block
+	float timeSec = (float)glfwGetTime();
+	vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(float), &timeSec);
 		uint32_t gx = (app.drawExtent.width + 15u) / 16u;
 		uint32_t gy = (app.drawExtent.height + 15u) / 16u;
 		vkCmdDispatch(cmd, gx, gy, 1);

@@ -5,14 +5,37 @@ layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(set = 0, binding = 0, rgba32f) uniform image2D image;
 
+// Push constant for time (you can update this each frame from the host side)
+layout(push_constant) uniform Push {
+    float time;
+} pc;
+
 void main()
 {
     ivec2 tc = ivec2(gl_GlobalInvocationID.xy);
     ivec2 size = imageSize(image);
     if (tc.x >= size.x || tc.y >= size.y) return;
 
-    vec2 uv = (vec2(tc) + 0.2) / vec2(size);
-    // Simple colorful gradient, no loops, no buffers
-    vec3 col = vec3(uv.x, uv.y, 0.5 + 0.5 * tan(uv.x));
+    // Normalize coordinates to [-1,1]
+    vec2 uv = (vec2(tc) / vec2(size)) * 2.0 - 1.0;
+
+    // Polar coordinates
+    float r = length(uv);
+    float a = atan(uv.y, uv.x);
+
+    // Animate with time
+    float wave = sin(10.0 * r - pc.time) * 0.5 + 0.5;
+    float swirl = cos(6.0 * a + pc.time * 0.7);
+
+    // Combine into colors
+    vec3 col;
+    col.r = 0.5 + 0.5 * sin(a * 3.0 + pc.time + r * 5.0);
+    col.g = wave * swirl;
+    col.b = 0.5 + 0.5 * cos(r * 8.0 - pc.time * 1.2);
+
+    // Radial fade
+    col *= smoothstep(1.0, 0.2, r);
+
     imageStore(image, tc, vec4(col, 1.0));
 }
+

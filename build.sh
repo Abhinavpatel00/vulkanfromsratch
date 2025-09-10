@@ -45,7 +45,7 @@ cpp_src_files=(
 # Flags
 CFLAGS="-DTRACY_ENABLE -D_DEBUG -DVK_USE_PLATFORM_WAYLAND_KHR -std=c99 -I VulkanMemoryAllocator/include"
 CXXFLAGS="-DTRACY_ENABLE -D_DEBUG -DVK_USE_PLATFORM_WAYLAND_KHR -std=c++17 -I VulkanMemoryAllocator/include"
-LDFLAGS="-lvulkan -lm -lglfw -lpthread -ldl"
+LDFLAGS="-lvulkan -lm -lglfw -lpthread -ldl -lxcb -lX11-xcb -lX11"
 
 # Output binary
 OUTPUT="$BUILD_FOLDER/tri"
